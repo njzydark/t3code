@@ -83,6 +83,22 @@ class MobileBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OTA"):
                 native.prepare_android(root, "123")
 
+    def test_android_sdk_selects_the_published_base_platform_without_lowering_api(self):
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = Path(directory) / "libs.versions.toml"
+            for version, expected in [("36", "36"), ("37", "37.0"), ("37.1", "37.1")]:
+                with self.subTest(version=version):
+                    catalog.write_text(f'''[versions]
+compileSdk = "{version}"
+buildTools = "37.0.0"
+ndkVersion = "27.1.12297006"
+''')
+                    self.assertEqual(native.android_sdk_packages(catalog), [
+                        f"platforms;android-{expected}",
+                        "build-tools;37.0.0",
+                        "ndk;27.1.12297006",
+                    ])
+
     def test_ios_versions_include_extensions_and_require_disabled_native_ota(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
