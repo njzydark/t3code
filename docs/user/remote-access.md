@@ -2,6 +2,9 @@
 
 Drive T3 Code from your phone, browser (`app.t3.codes`), or another desktop app while your agents run on a host computer or server. The host must stay awake and running while you work.
 
+This fork also supports an [encrypted self-hosted relay](./self-hosted-relay.md)
+for environments behind NAT, using a public VPS and clients built from this fork.
+
 ## T3 Connect (recommended)
 
 T3 Connect links your host to your other devices without router port-forwarding.

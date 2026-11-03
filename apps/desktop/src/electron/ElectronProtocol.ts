@@ -120,6 +120,7 @@ function registerDesktopSchemePrivilegesSync(): void {
         stream: true,
         // Custom schemes must opt into V8 caching; dev URLs serve changing code.
         codeCache: true,
+        allowServiceWorkers: true,
       },
     },
     {
@@ -130,6 +131,7 @@ function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
+        allowServiceWorkers: true,
       },
     },
   ]);

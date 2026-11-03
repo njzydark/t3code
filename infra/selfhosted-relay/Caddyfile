@@ -1,0 +1,4 @@
+{$T3_RELAY_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy relay:8788
+}

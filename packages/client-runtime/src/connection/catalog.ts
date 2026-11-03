@@ -22,6 +22,13 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
+    selfHostedRelay: Schema.optionalKey(
+      Schema.Struct({
+        relayUrl: Schema.String,
+        route: Schema.String,
+        peerId: Schema.String,
+      }),
+    ),
     learned: Schema.optionalKey(Schema.Literal(true)),
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
     /**
