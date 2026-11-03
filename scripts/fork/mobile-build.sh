@@ -57,7 +57,7 @@ python3 "$helper" config "$work/config.json"
 # Use the installed Expo template and native bundlers, without EAS or an Expo login.
 [[ -f node_modules/expo/template.tgz ]] || fail 'Installed Expo native template missing; refusing a remote template fallback.'
 vp exec expo prebuild --clean --platform "$platform" --no-install \
-  --template node_modules/expo/template.tgz --skip-dependency-update react,react-native
+  --template "$mobile/node_modules/expo/template.tgz" --skip-dependency-update react,react-native
 
 if [[ "$platform" == ios ]]; then
   python3 "$helper" prepare-ios "$mobile/ios" "$MOBILE_BUILD_NUMBER"
