@@ -21,6 +21,18 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def check_versions(build_number, ios=False, version=""):
+    if ios:
+        require(re.fullmatch(r"[1-9][0-9]{0,3}(?:\.(?:0|[1-9][0-9]?)){0,2}", build_number),
+                "iOS build must have at most 4.2.2 digits without leading zeros")
+    else:
+        require(re.fullmatch(r"[1-9][0-9]{0,9}", build_number) and int(build_number) <= 2100000000,
+                "Android build must be a positive integer up to 2100000000")
+    if version:
+        require(re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version),
+                "Mobile app version must contain exactly three integers without leading zeros")
+
+
 def check_config(config):
     require(config["name"] == "T3 Code", "Production app name must remain T3 Code")
     require(config["ios"]["bundleIdentifier"] == APP_ID, "iOS bundle ID changed")
@@ -30,7 +42,7 @@ def check_config(config):
     require(config["runtimeVersion"] == {"policy": "appVersion"}, "appVersion policy required")
 
 
-def prepare_ios(native, build_number):
+def prepare_ios(native, build_number, version=""):
     expo_files = list(native.glob("*/Supporting/Expo.plist"))
     require(expo_files, "Generated iOS Expo.plist not found")
     for path in expo_files:
@@ -41,6 +53,8 @@ def prepare_ios(native, build_number):
         config = plistlib.loads(path.read_bytes())
         if "CFBundleVersion" in config:
             config["CFBundleVersion"] = build_number
+            if version:
+                config["CFBundleShortVersionString"] = version
             path.write_bytes(plistlib.dumps(config, sort_keys=False))
             updated.append(path)
     require(updated, "No generated iOS bundle versions found")
@@ -97,7 +111,7 @@ def verify_zip(archive):
     require(all(not n.startswith("/") and ".." not in n.split("/") for n in names), "Unsafe archive paths")
 
 
-def verify_ipa(path, build_number):
+def verify_ipa(path, build_number, version=""):
     with zipfile.ZipFile(path) as archive:
         verify_zip(archive)
         names = archive.namelist()
@@ -108,6 +122,8 @@ def verify_ipa(path, build_number):
         require(info["CFBundleIdentifier"] == APP_ID, "IPA bundle ID changed")
         require(info.get("CFBundleDisplayName") == "T3 Code", "IPA display name changed")
         require(info["CFBundleVersion"] == build_number, "IPA build number mismatch")
+        if version:
+            require(info["CFBundleShortVersionString"] == version, "IPA app version mismatch")
         require(info["CFBundleSupportedPlatforms"] == ["iPhoneOS"], "IPA is not an iOS device build")
         executable = archive.read(root + info["CFBundleExecutable"])
         require(len(executable) >= 32, "IPA executable missing or empty")
@@ -121,6 +137,8 @@ def verify_ipa(path, build_number):
                 extension = plistlib.loads(archive.read(name))
                 require(extension["CFBundleIdentifier"].startswith(APP_ID + "."), "Extension bundle ID changed")
                 require(extension["CFBundleVersion"] == build_number, "Extension build number mismatch")
+                if version:
+                    require(extension["CFBundleShortVersionString"] == version, "Extension app version mismatch")
 
 
 def verify_apk(path):
@@ -137,13 +155,15 @@ def main():
     if command == "config":
         check_config(json.loads(path.read_text()))
     elif command == "prepare-ios":
-        prepare_ios(path, args[0])
+        prepare_ios(path, args[0], args[1] if len(args) > 1 else "")
     elif command == "prepare-android":
         prepare_android(path, args[0])
     elif command == "android-sdk":
         print("\n".join(android_sdk_packages(path)))
     elif command == "ipa":
-        verify_ipa(path, args[0])
+        verify_ipa(path, args[0], args[1] if len(args) > 1 else "")
+    elif command == "versions":
+        check_versions(raw_path, args[0] == "ios", args[1] if len(args) > 1 else "")
     elif command == "apk":
         verify_apk(path)
     else:

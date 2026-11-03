@@ -14,6 +14,19 @@ spec.loader.exec_module(native)
 
 
 class MobileBuildTests(unittest.TestCase):
+    def test_date_versions_respect_each_native_platforms_numeric_limits(self):
+        native.check_versions("2611.3.1", ios=True, version="2026.11.3")
+        native.check_versions("2026110301", version="2026.11.3")
+        for value in ["2026110301", "2611.003.1", "2611.3.100", "2611.3.1.1", "0"]:
+            with self.subTest(ios=value), self.assertRaises(ValueError):
+                native.check_versions(value, ios=True)
+        for value in ["2100000001", "2611.3.1", "026110301", "0"]:
+            with self.subTest(android=value), self.assertRaises(ValueError):
+                native.check_versions(value)
+        for value in ["2026.11", "2026.11.3-fork.1", "2026.11.03"]:
+            with self.subTest(version=value), self.assertRaises(ValueError):
+                native.check_versions("42", version=value)
+
     def test_config_rejects_ota_variant_and_identity_drift(self):
         config = {
             "name": "T3 Code", "ios": {"bundleIdentifier": native.APP_ID},
@@ -109,9 +122,11 @@ ndkVersion = "27.1.12297006"
                 path = root / name / "Info.plist"
                 path.parent.mkdir(exist_ok=True)
                 path.write_bytes(plistlib.dumps({"CFBundleVersion": "1"}))
-            native.prepare_ios(root, "42")
+            native.prepare_ios(root, "2611.3.1", "2026.11.3")
             for path in root.glob("*/Info.plist"):
-                self.assertEqual(plistlib.loads(path.read_bytes())["CFBundleVersion"], "42")
+                config = plistlib.loads(path.read_bytes())
+                self.assertEqual(config["CFBundleVersion"], "2611.3.1")
+                self.assertEqual(config["CFBundleShortVersionString"], "2026.11.3")
             expo.write_bytes(plistlib.dumps({"EXUpdatesEnabled": True}))
             with self.assertRaisesRegex(ValueError, "OTA"):
                 native.prepare_ios(root, "43")
@@ -120,7 +135,8 @@ ndkVersion = "27.1.12297006"
         root = "Payload/T3Code.app/"
         info = {
             "CFBundleIdentifier": native.APP_ID, "CFBundleDisplayName": "T3 Code",
-            "CFBundleVersion": "42", "CFBundleSupportedPlatforms": ["iPhoneOS"],
+            "CFBundleVersion": "42", "CFBundleShortVersionString": "2026.11.3",
+            "CFBundleSupportedPlatforms": ["iPhoneOS"],
             "CFBundleExecutable": "T3Code",
         }
         files = {
@@ -131,7 +147,7 @@ ndkVersion = "27.1.12297006"
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "device.ipa"
-            for issue in [None, "simulator", "missing-js", "signature", "extension-version", "ota"]:
+            for issue in [None, "simulator", "missing-js", "signature", "extension-version", "ota", "app-version", "extension-app-version"]:
                 with self.subTest(issue=issue):
                     contents = dict(files)
                     if issue == "simulator":
@@ -144,14 +160,21 @@ ndkVersion = "27.1.12297006"
                         contents[root + "PlugIns/Widgets.appex/Info.plist"] = plistlib.dumps({"CFBundleIdentifier": native.APP_ID + ".widgets", "CFBundleVersion": "1"})
                     elif issue == "ota":
                         contents[root + "Expo.plist"] = plistlib.dumps({"EXUpdatesEnabled": True})
+                    elif issue == "app-version":
+                        contents[root + "Info.plist"] = plistlib.dumps({**info, "CFBundleShortVersionString": "2.2.0"})
+                    elif issue == "extension-app-version":
+                        contents[root + "PlugIns/Widgets.appex/Info.plist"] = plistlib.dumps({
+                            "CFBundleIdentifier": native.APP_ID + ".widgets",
+                            "CFBundleVersion": "42", "CFBundleShortVersionString": "2.2.0",
+                        })
                     with zipfile.ZipFile(path, "w") as archive:
                         for name, data in contents.items():
                             archive.writestr(name, data)
                     if issue is None:
-                        native.verify_ipa(path, "42")
+                        native.verify_ipa(path, "42", "2026.11.3")
                     else:
                         with self.assertRaises((ValueError, KeyError)):
-                            native.verify_ipa(path, "42")
+                            native.verify_ipa(path, "42", "2026.11.3")
 
     def test_apk_requires_embedded_js_and_arm64_libraries_and_valid_crc(self):
         files = {"AndroidManifest.xml": b"manifest", "classes.dex": b"dex", "assets/index.android.bundle": b"bundle", "lib/arm64-v8a/libreactnative.so": b"native"}

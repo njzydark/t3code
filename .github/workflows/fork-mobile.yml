@@ -1,6 +1,29 @@
 name: Fork mobile self-use
 
 on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        default: all
+      build_number:
+        type: string
+        required: true
+      ios_build_number:
+        type: string
+        default: ""
+      version:
+        type: string
+        default: ""
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
   workflow_dispatch:
     inputs:
       target:
@@ -11,6 +34,14 @@ on:
         required: true
       build_number:
         description: Positive build number (1-2100000000); empty uses the workflow run number
+        type: string
+        default: ""
+      ios_build_number:
+        description: Optional iOS build (up to 4.2.2 digits); overrides build_number on iOS
+        type: string
+        default: ""
+      version:
+        description: Optional mobile app version (three integers, for example 2026.11.3)
         type: string
         default: ""
 
@@ -42,6 +73,8 @@ jobs:
       EXPO_NO_TELEMETRY: "1"
       NODE_OPTIONS: --max-old-space-size=4096
       MOBILE_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+      FORK_IOS_BUILD_NUMBER: ${{ inputs.ios_build_number }}
+      T3CODE_MOBILE_VERSION: ${{ inputs.version }}
     steps:
       # Credential cleanup in checkout traverses orphaned gitlinks in .repos.
       - name: Checkout public source without submodule traversal
@@ -96,7 +129,7 @@ jobs:
       - name: Upload verified build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: t3-code-${{ matrix.target }}-self-use-${{ env.MOBILE_BUILD_NUMBER }}
+          name: t3-code-${{ matrix.target }}-self-use-${{ matrix.target == 'ios' && inputs.ios_build_number || env.MOBILE_BUILD_NUMBER }}
           path: artifacts/fork-mobile/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7

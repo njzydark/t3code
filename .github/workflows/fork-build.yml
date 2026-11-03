@@ -1,6 +1,17 @@
 name: Fork desktop, CLI and web builds
 
 on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        default: all
+      version:
+        type: string
+        required: true
+      web_origin:
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       target:
