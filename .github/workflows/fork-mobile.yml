@@ -43,14 +43,18 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
       MOBILE_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      # Credential cleanup in checkout traverses orphaned gitlinks in .repos.
+      - name: Checkout public source without submodule traversal
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Select pinned Xcode
         if: matrix.target == 'ios'
