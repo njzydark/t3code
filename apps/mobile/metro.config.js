@@ -22,6 +22,19 @@ const generatedPreviewStreamRoot = path.join(__dirname, ".generated", "preview-s
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
 config.resolver = {
   ...config.resolver,
+  resolveRequest(context, moduleName, platform) {
+    const result = context.resolveRequest(context, moduleName, platform);
+    // libp2p's React Native address-enumeration entry requires Node; relay uses its browser implementation.
+    if (
+      result.type === "sourceFile" &&
+      result.filePath
+        .replace(/\\/g, "/")
+        .endsWith("/@libp2p/utils/dist/src/get-thin-waist-addresses.js")
+    ) {
+      return { ...result, filePath: result.filePath.replace(/\.js$/, ".browser.js") };
+    }
+    return result;
+  },
   blockList: [
     ...(Array.isArray(config.resolver?.blockList)
       ? config.resolver.blockList
