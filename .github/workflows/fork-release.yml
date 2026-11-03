@@ -1,0 +1,153 @@
+name: Fork Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Desktop / CLI / web assets to include
+        type: choice
+        options: [all, desktop-macos-arm64, desktop-linux-x64, cli-linux-x64, web]
+        default: all
+      mobile:
+        description: Mobile assets to include
+        type: choice
+        options: [all, ios, android, none]
+        default: all
+      relay:
+        description: Include both Relay Docker archives
+        type: boolean
+        default: true
+      publish_relay:
+        description: Also publish the Relay images to GHCR
+        type: boolean
+        default: false
+      notes:
+        description: User-facing fork changes (optional; review the generated draft before publishing)
+        type: string
+        default: ""
+      web_origin:
+        description: Optional static web origin (https://your.host, no trailing slash)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event.repository.fork == true && github.ref == 'refs/heads/codex/build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      mobile_version: ${{ steps.plan.outputs.mobile_version }}
+      android_build: ${{ steps.plan.outputs.android_build }}
+      ios_build: ${{ steps.plan.outputs.ios_build }}
+    steps:
+      # Release notes need ancestry; native builds still use shallow checkouts.
+      - name: Checkout pinned source and fork release history
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "$GITHUB_SHA" refs/heads/main:refs/remotes/origin/main
+          git fetch origin 'refs/tags/fork-*:refs/tags/fork-*'
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach "$GITHUB_SHA"
+      - name: Check release planning and artifact validation
+        run: python3 -B scripts/fork/release_test.py
+      - name: Plan dated versions and release notes
+        id: plan
+        env:
+          RELEASE_TARGET: ${{ inputs.target }}
+          RELEASE_MOBILE: ${{ inputs.mobile }}
+          RELEASE_RELAY: ${{ inputs.relay }}
+          RELEASE_PUBLISH_RELAY: ${{ inputs.publish_relay }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: python3 -B scripts/fork/release.py plan
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fork-release-plan
+          path: release-plan/*
+          if-no-files-found: error
+          retention-days: 14
+
+  clients:
+    needs: prepare
+    uses: ./.github/workflows/fork-build.yml
+    with:
+      target: ${{ inputs.target }}
+      version: ${{ needs.prepare.outputs.version }}
+      web_origin: ${{ inputs.web_origin }}
+
+  mobile:
+    needs: prepare
+    if: inputs.mobile != 'none'
+    uses: ./.github/workflows/fork-mobile.yml
+    with:
+      target: ${{ inputs.mobile }}
+      version: ${{ needs.prepare.outputs.mobile_version }}
+      build_number: ${{ needs.prepare.outputs.android_build }}
+      ios_build_number: ${{ needs.prepare.outputs.ios_build }}
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+  relay:
+    needs: prepare
+    if: inputs.relay
+    uses: ./.github/workflows/fork-relay-image.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      tag: ${{ needs.prepare.outputs.version }}
+      version: ${{ needs.prepare.outputs.version }}
+      publish: ${{ inputs.publish_relay }}
+
+  draft:
+    needs: [prepare, clients, mobile, relay]
+    if: >-
+      !cancelled() &&
+      needs.prepare.result == 'success' &&
+      needs.clients.result == 'success' &&
+      (needs.mobile.result == 'success' || needs.mobile.result == 'skipped') &&
+      (needs.relay.result == 'success' || needs.relay.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout pinned release tooling
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: "{fork-release-plan,fork-desktop-*,fork-cli-*,fork-web-*,t3-code-*-self-use-*,relay-linux-amd64-*}"
+          path: downloaded
+      - name: Verify selected assets and assemble release checksums
+        run: python3 -B scripts/fork/release.py assemble downloaded release-assets
+      - name: Create or refresh the unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 -B scripts/fork/release.py draft
