@@ -1,5 +1,8 @@
 import {
   AuthEnvironmentMaintainScope,
+  AuthAccessWriteScope,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
@@ -72,6 +75,14 @@ describe("RPC authorization scopes", () => {
     for (const method of [WS_METHODS.subscribeVcsBranch, WS_METHODS.vcsRefreshBranch]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }
+  });
+
+  it("separates self-hosted relay status, host configuration, and pairing grants", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.selfHostedRelaySubscribe)).toBe(AuthRelayReadScope);
+    for (const method of [WS_METHODS.selfHostedRelayUpdate, WS_METHODS.selfHostedRelayForget]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthRelayWriteScope);
+    }
+    expect(requiredScopeForRpcMethod(WS_METHODS.selfHostedRelayPair)).toBe(AuthAccessWriteScope);
   });
 
   it("rejects unknown RPC method names", () => {

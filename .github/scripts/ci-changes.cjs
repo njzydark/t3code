@@ -30,7 +30,8 @@ const EXTRA_OWNERS = [
   // apps/server/src/cloud/ConnectReachability.test.ts checks the guide's headings.
   [/^docs\/user\/t3-connect-troubleshooting\.md$/, ["t3"]],
 ];
-const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)\//;
+const RUST =
+  /^(native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)|infra\/selfhosted-relay)\//;
 
 // These tests read other packages without declaring dependencies.
 const TEST_ONLY_DEPS = {
@@ -115,7 +116,7 @@ function ownersOf(file, packages) {
   if (path.posix.basename(file) === "package.json") return null;
   if (RUNS_EVERYTHING.some((pattern) => pattern.test(file))) return null;
   // scripts/build-desktop-artifact.test.ts reads the crates' sources.
-  if (RUST.test(file)) return ["@t3tools/scripts", ...extra];
+  if (file.startsWith("native/") && RUST.test(file)) return ["@t3tools/scripts", ...extra];
 
   const owner = packages
     .filter((pkg) => file.startsWith(`${pkg.dir}/`))

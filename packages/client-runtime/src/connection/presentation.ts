@@ -140,7 +140,7 @@ export function connectionCatalogDisplayUrl(entry: ConnectionCatalogEntry): stri
       return null;
     case "BearerConnectionTarget":
       return Option.isSome(entry.profile) && entry.profile.value._tag === "BearerConnectionProfile"
-        ? entry.profile.value.httpBaseUrl
+        ? (entry.profile.value.selfHostedRelay?.relayUrl ?? entry.profile.value.httpBaseUrl)
         : null;
     case "SshConnectionTarget":
       return Option.isSome(entry.profile) && entry.profile.value._tag === "SshConnectionProfile"

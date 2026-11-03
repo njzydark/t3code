@@ -1,0 +1,13 @@
+**
+!LICENSE
+!apps/
+!apps/web/
+!apps/web/dist/
+!apps/web/dist/**
+!infra/
+!infra/selfhosted-relay/
+!infra/selfhosted-relay/Cargo.toml
+!infra/selfhosted-relay/Cargo.lock
+!infra/selfhosted-relay/src/
+!infra/selfhosted-relay/src/*.rs
+**/*.map

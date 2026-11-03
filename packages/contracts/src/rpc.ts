@@ -1,3 +1,10 @@
+import { AuthCreatePairingCredentialInput } from "./auth.ts";
+import {
+  SelfHostedRelayStatus,
+  SelfHostedRelayPairResult,
+  SelfHostedRelayUpdate,
+  SelfHostedRelayOperationError,
+} from "./selfHostedRelay.ts";
 import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
@@ -559,6 +566,10 @@ export const WS_METHODS = {
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
+  selfHostedRelaySubscribe: "selfHostedRelay.subscribe",
+  selfHostedRelayUpdate: "selfHostedRelay.update",
+  selfHostedRelayForget: "selfHostedRelay.forget",
+  selfHostedRelayPair: "selfHostedRelay.pair",
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
 
@@ -1020,6 +1031,32 @@ const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
   error: EnvironmentAuthorizationError,
+});
+
+const selfHostedRelayError = Schema.Union([
+  SelfHostedRelayOperationError,
+  EnvironmentAuthorizationError,
+]);
+const WsSelfHostedRelaySubscribeRpc = Rpc.make(WS_METHODS.selfHostedRelaySubscribe, {
+  payload: Schema.Struct({}),
+  success: SelfHostedRelayStatus,
+  error: selfHostedRelayError,
+  stream: true,
+});
+const WsSelfHostedRelayUpdateRpc = Rpc.make(WS_METHODS.selfHostedRelayUpdate, {
+  payload: SelfHostedRelayUpdate,
+  success: SelfHostedRelayStatus,
+  error: selfHostedRelayError,
+});
+const WsSelfHostedRelayForgetRpc = Rpc.make(WS_METHODS.selfHostedRelayForget, {
+  payload: Schema.Struct({}),
+  success: SelfHostedRelayStatus,
+  error: selfHostedRelayError,
+});
+const WsSelfHostedRelayPairRpc = Rpc.make(WS_METHODS.selfHostedRelayPair, {
+  payload: AuthCreatePairingCredentialInput,
+  success: SelfHostedRelayPairResult,
+  error: selfHostedRelayError,
 });
 
 const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
@@ -2151,6 +2188,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
+  WsSelfHostedRelaySubscribeRpc,
+  WsSelfHostedRelayUpdateRpc,
+  WsSelfHostedRelayForgetRpc,
+  WsSelfHostedRelayPairRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

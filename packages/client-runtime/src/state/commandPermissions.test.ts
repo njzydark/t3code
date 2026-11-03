@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthAccessReadScope,
+  AuthRelayWriteScope,
   AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
@@ -99,6 +100,33 @@ describe("command permissions", () => {
         expect((yield* refresh.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
           "EnvironmentAuthorizationError",
         );
+      }),
+    ),
+  );
+
+  it.effect("requires destination grants to configure a relay or issue pairing links", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        for (const [tag, scope] of [
+          [WS_METHODS.selfHostedRelayUpdate, AuthRelayWriteScope],
+          [WS_METHODS.selfHostedRelayForget, AuthRelayWriteScope],
+          [WS_METHODS.selfHostedRelayPair, AuthAccessWriteScope],
+        ] as const) {
+          const command = createCommandPermissions(runtime, tag);
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(command.permissionAtom(env))).toBe(false);
+          expect((yield* command.authorize(registry, env).pipe(Effect.flip)).requiredScope).toBe(
+            scope,
+          );
+          registry.set(
+            sessions(env),
+            AsyncResult.success({ ...grant(false), scopes: [scope], permissions: [scope] }),
+          );
+          expect(registry.get(command.permissionAtom(env))).toBe(true);
+          yield* command.authorize(registry, env);
+          expect(registry.get(command.permissionAtom(other))).toBe(false);
+        }
       }),
     ),
   );

@@ -173,10 +173,11 @@ export function HostedPairingRouteSurface() {
     setCanRetry(false);
     tokenSubmittedRef.current = true;
 
-    const result = await connectPairingEnvironment({
-      host: request.host,
-      pairingCode: request.token,
-    });
+    const result = await connectPairingEnvironment(
+      request.pairingUrl
+        ? { pairingUrl: request.pairingUrl }
+        : { host: request.host, pairingCode: request.token },
+    );
     if (result._tag === "Success") {
       setStatus("paired");
       setMessage(`${request.label || "The environment"} is saved in this browser.`);

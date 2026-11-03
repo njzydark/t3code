@@ -9,6 +9,30 @@ import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
+import { ConnectionBlockedError } from "../connection/model.ts";
+import type { RelayAddress } from "@t3tools/relay-transport";
+
+export class SelfHostedRelayGateway extends Context.Reference<{
+  readonly disconnect: (address: RelayAddress) => Effect.Effect<void>;
+  readonly prepare: (
+    address: RelayAddress,
+  ) => Effect.Effect<
+    { readonly httpBaseUrl: string; readonly wsBaseUrl: string },
+    ConnectionAttemptError
+  >;
+}>("@t3tools/client-runtime/platform/capabilities/SelfHostedRelayGateway", {
+  defaultValue: () => ({
+    disconnect: () => Effect.void,
+    prepare: () =>
+      Effect.fail(
+        new ConnectionBlockedError({
+          reason: "unsupported",
+          detail:
+            "This client does not support self-hosted relay connections. Install a build with relay support.",
+        }),
+      ),
+  }),
+}) {}
 
 export interface PreparedSshEnvironment {
   readonly bootstrap: DesktopSshEnvironmentBootstrap;

@@ -268,8 +268,12 @@ export const issueRemoteDpopWebSocketTicket = Effect.fn(
 
 function rpcSocketUrl(wsBaseUrl: string): URL {
   const url = new URL(wsBaseUrl);
-  if (url.pathname === "" || url.pathname === "/") {
-    url.pathname = "/ws";
+  if (
+    url.pathname === "" ||
+    url.pathname === "/" ||
+    /^\/__t3_relay\/[a-f0-9]{32}\/$/.test(url.pathname)
+  ) {
+    url.pathname = url.pathname.replace(/\/$/, "") + "/ws";
   }
   return url;
 }

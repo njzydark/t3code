@@ -1,0 +1,36 @@
+services:
+  relay:
+    image: ${T3_RELAY_IMAGE:-t3-selfhosted-relay:latest}
+    build:
+      context: ../..
+      dockerfile: infra/selfhosted-relay/Dockerfile
+      target: ${T3_RELAY_BUILD_TARGET:-web}
+    restart: unless-stopped
+    environment:
+      T3_RELAY_REGISTRATION_TOKEN: ${T3_RELAY_REGISTRATION_TOKEN:?Set a random registration token of at least 32 characters}
+    ports:
+      - "127.0.0.1:8788:8788"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+  caddy:
+    image: caddy:2.10.2-alpine
+    profiles: [tls]
+    restart: unless-stopped
+    environment:
+      T3_RELAY_DOMAIN: ${T3_RELAY_DOMAIN:-relay.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      relay:
+        condition: service_healthy
+volumes:
+  caddy-data:
+  caddy-config:

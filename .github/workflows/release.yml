@@ -287,6 +287,9 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - name: Setup Rust for relay interoperability tests
+        uses: dtolnay/rust-toolchain@stable
+
       - uses: ./.github/actions/setup-apt-mirrors
 
       - name: Install browser secret helper build libraries

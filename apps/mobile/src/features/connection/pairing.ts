@@ -35,7 +35,9 @@ export function buildPairingUrl(host: string, code: string): string {
 
   try {
     const url = new URL(h.includes("://") ? h : `${isIpLiteral(h) ? "http" : "https"}://${h}`);
-    url.hash = new URLSearchParams([["token", c]]).toString();
+    const hash = new URLSearchParams(url.hash.slice(1));
+    hash.set("token", c);
+    url.hash = hash.toString();
     return url.toString();
   } catch {
     return `${h}#token=${c}`;
@@ -60,6 +62,13 @@ export function parsePairingUrl(url: string): { host: string; code: string } {
     const hashToken = hashParams.get("token");
     const queryToken = parsed.searchParams.get("token");
     const code = hashToken || queryToken || "";
+
+    if (hashParams.get("relay") === "1") {
+      hashParams.delete("token");
+      parsed.searchParams.delete("token");
+      parsed.hash = hashParams.toString();
+      return { host: parsed.toString(), code };
+    }
 
     parsed.hash = "";
     parsed.search = "";

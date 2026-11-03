@@ -1,3 +1,5 @@
+import * as SelfHostedRelayHost from "./cloud/SelfHostedRelayHost.ts";
+import * as SelfHostedRelay from "./cloud/SelfHostedRelay.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -1278,6 +1280,7 @@ const layerMakeServer = Layer.unwrap(
     );
 
     return layerServerApplication.pipe(
+      Layer.provide(SelfHostedRelayHost.layer.pipe(Layer.provide(SelfHostedRelay.layer))),
       Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
       Layer.provideMerge(layerRuntimeServices),
       Layer.provideMerge(

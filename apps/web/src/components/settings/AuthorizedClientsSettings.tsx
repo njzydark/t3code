@@ -1,8 +1,10 @@
+import { useAtomValue } from "@effect/atom-react";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
   AuthAccessWriteScope,
+  AuthRelayReadScope,
   AuthDiagnosticsReadScope,
   AuthOrchestrationReadScope,
   AuthFilesystemReadScope,
@@ -55,9 +57,12 @@ import {
   type ServerPairingLinkRecord,
 } from "~/environments/primary";
 import { authEnvironment } from "~/state/auth";
-import { readEnvironmentScope } from "~/state/session";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useManagedPolicy, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { pairSelfHostedRelay, selfHostedRelayStatus } from "~/state/selfHostedRelay";
+import { useEnvironmentQuery } from "~/state/query";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { ManagedControl } from "../ManagedPolicy";
 import { openUseInAnotherApp } from "../mcp/UseInAnotherAppDialog";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
@@ -128,6 +133,7 @@ type PairingLinkListRowProps = {
   pairingLink: ServerPairingLinkRecord;
   credential: string | undefined;
   defaultShareOpen: boolean;
+  pairingUrl: string | undefined;
   /** Whether this page is served by the environment the link pairs with. */
   servedByEnvironment: boolean;
   endpointUrl: string | null | undefined;
@@ -142,6 +148,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   pairingLink,
   credential,
   defaultShareOpen,
+  pairingUrl,
   servedByEnvironment,
   endpointUrl,
   endpoints,
@@ -178,6 +185,14 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       readonly qrShareable: boolean;
     }> = [];
     if (!credential) return options;
+    if (pairingUrl) return [{
+      id: "self-hosted-relay",
+      preferenceKey: "self-hosted-relay",
+      label: "Self-hosted relay",
+      url: pairingUrl,
+      detail: new URL(pairingUrl).origin,
+      qrShareable: !isLoopbackHostname(new URL(pairingUrl).hostname),
+    }];
     for (const endpoint of endpoints) {
       if (endpoint.status === "unavailable") {
         continue;
@@ -195,6 +210,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     return options;
   })();
   const shareablePairingUrl =
+    pairingUrl ??
     endpointPairingUrl ??
     (credential && endpointUrl != null && endpointUrl !== ""
       ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential))
@@ -575,7 +591,7 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
 
 type AuthorizedClientsHeaderActionProps = {
   environmentId: EnvironmentId;
-  onPairingLinkCreated: (result: AuthPairingCredentialResult) => void;
+  onPairingLinkCreated: (result: AuthPairingCredentialResult, pairingUrl?: string) => void;
   clientSessions: ReadonlyArray<ServerClientSessionRecord> | null;
   isRevokingOtherClients: boolean;
   onRevokeOtherClients: () => void;
@@ -594,6 +610,15 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   const createPairingCredential = useAtomCommand(authEnvironment.createPairingCredential, {
     reportFailure: false,
   });
+  const canReadRelay = useEnvironmentScope(environmentId, AuthRelayReadScope);
+  const relay = useEnvironmentQuery(
+    canReadRelay ? selfHostedRelayStatus({ environmentId, input: {} }) : null,
+  );
+  const canPairViaRelay = useAtomValue(pairSelfHostedRelay.permissionAtom(environmentId));
+  const pairViaRelay = useAtomCommand(pairSelfHostedRelay, { reportFailure: false });
+  const [connectionType, setConnectionType] = useState<"direct" | "relay">("direct");
+  const relayUnavailable = connectionType === "relay" &&
+    (relay.error !== null || relay.data?.phase !== "connected" || !canPairViaRelay);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
   const [pairingScopes, setPairingScopes] = useState<ReadonlyArray<AuthGrantScope>>([
@@ -606,17 +631,19 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     if (
       selectedScopes.length === 0 ||
       !readEnvironmentScope(environmentId, AuthAccessWriteScope) ||
-      !selectedScopes.every((scope) => readEnvironmentScope(environmentId, scope))
+      !selectedScopes.every((scope) => readEnvironmentScope(environmentId, scope)) ||
+      relayUnavailable
     )
       return;
     setIsCreatingPairingLink(true);
     const trimmedLabel = pairingLabel.trim();
-    const result = await createPairingCredential({
-      environmentId,
-      input: { ...(trimmedLabel ? { label: trimmedLabel } : {}), scopes: selectedScopes },
-    });
+    const input = { ...(trimmedLabel ? { label: trimmedLabel } : {}), scopes: selectedScopes };
+    const result = connectionType === "relay"
+      ? await pairViaRelay({ environmentId, input })
+      : await createPairingCredential({ environmentId, input });
     if (result._tag === "Success") {
-      onPairingLinkCreated(result.value);
+      onPairingLinkCreated(result.value, "url" in result.value ? result.value.url : undefined);
+      setConnectionType("direct");
       setPairingLabel("");
       setPairingScopes(
         AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
@@ -665,8 +692,10 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       <Dialog
         open={dialogOpen && pairingDenial === undefined}
         onOpenChange={(open) => {
+          if (isCreatingPairingLink) return;
           setDialogOpen(open);
           if (!open) {
+            setConnectionType("direct");
             setPairingLabel("");
             setPairingScopes(
               AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
@@ -693,6 +722,45 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
+                {relay.data?.hasRegistrationToken || connectionType === "relay" ? (
+                  <div className="space-y-1.5">
+                    <span id="pairing-connection-type" className="text-xs font-medium">
+                      Connection type
+                    </span>
+                    <Select
+                      value={connectionType}
+                      onValueChange={(value) => {
+                        if (value === "direct" || value === "relay") setConnectionType(value);
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-labelledby="pairing-connection-type"
+                        disabled={isCreatingPairingLink}
+                      >
+                        <SelectValue>
+                          {connectionType === "relay"
+                            ? "Self-hosted relay"
+                            : "Direct / existing address"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="direct">Direct / existing address</SelectItem>
+                        <SelectItem value="relay">Self-hosted relay</SelectItem>
+                      </SelectPopup>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {connectionType === "relay"
+                        ? `Via ${relay.data?.relayUrl ?? "your relay"}. No direct access to this host is needed.`
+                        : "Use an existing host address, such as LAN, Tailscale or a configured public endpoint."}
+                    </p>
+                    {relayUnavailable ? (
+                      <p role="status" className="text-xs text-warning">
+                        {relay.error ??
+                          "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct."}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-foreground">
                 Client label (optional)
@@ -788,7 +856,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
               Cancel
             </Button>
             <Button
-              disabled={isCreatingPairingLink || selectedScopes.length === 0}
+              disabled={isCreatingPairingLink || selectedScopes.length === 0 || relayUnavailable}
               onClick={() => void handleCreatePairingLink()}
             >
               {isCreatingPairingLink ? "Creating…" : "Create link"}
@@ -809,6 +877,7 @@ type PairingClientsListProps = {
   pairingLinks: ReadonlyArray<ServerPairingLinkRecord>;
   createdPairingCredentials: ReadonlyMap<string, string>;
   sharedPairingLinkId: string | null;
+  createdPairingUrls: ReadonlyMap<string, string>;
   clientSessions: ReadonlyArray<ServerClientSessionRecord>;
   revokingPairingLinkId: string | null;
   revokingClientSessionId: string | null;
@@ -826,6 +895,7 @@ export const PairingClientsList = memo(function PairingClientsList({
   pairingLinks,
   createdPairingCredentials,
   sharedPairingLinkId,
+  createdPairingUrls,
   clientSessions,
   revokingPairingLinkId,
   revokingClientSessionId,
@@ -841,6 +911,7 @@ export const PairingClientsList = memo(function PairingClientsList({
           pairingLink={pairingLink}
           credential={createdPairingCredentials.get(pairingLink.id)}
           defaultShareOpen={pairingLink.id === sharedPairingLinkId}
+          pairingUrl={createdPairingUrls.get(pairingLink.id)}
           servedByEnvironment={servedByEnvironment}
           endpointUrl={endpointUrl}
           endpoints={endpoints}

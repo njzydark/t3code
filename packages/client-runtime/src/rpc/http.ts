@@ -83,7 +83,7 @@ export const layerRemoteHttpClient = (
 
 const remoteApiBaseUrl = (httpBaseUrl: string): string => {
   const url = new URL(httpBaseUrl);
-  url.pathname = "/";
+  if (!/^\/__t3_relay\/[a-f0-9]{32}\/$/.test(url.pathname)) url.pathname = "/";
   url.search = "";
   url.hash = "";
   return url.toString();

@@ -48,6 +48,13 @@ describe("check:changed", () => {
     assert.deepStrictEqual(decide(["docs/user/install.md"], packages, false).affected, []);
   });
 
+  it("runs Rust and interoperability checks for the self-hosted relay without treating it as a desktop helper", () => {
+    const relay = decide(["infra/selfhosted-relay/src/broker.rs"], readWorkspace(), false);
+    assert.isTrue(relay.outputs.rust);
+    assert.include(relay.affected, "@t3tools/selfhosted-relay");
+    assert.notInclude(relay.affected, "@t3tools/scripts");
+  });
+
   it.effect(
     "keeps weighted steps within the budget, in order, and serial steps one at a time",
     () =>

@@ -14,6 +14,7 @@ import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import {
   BearerConnectionCredential,
+  BearerConnectionProfile,
   type ConnectionCatalogEntry,
   SshConnectionProfile,
   type ConnectionCredential,
@@ -22,6 +23,7 @@ import {
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
   ConnectionTransientError,
+  BearerConnectionTarget,
   PrimaryConnectionTarget,
   SshConnectionTarget,
   type ConnectionTarget,
@@ -169,6 +171,53 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 });
 
 describe("ConnectionResolver", () => {
+  it.effect("restores a saved relay through the gateway captured when the resolver was built", () =>
+    Effect.gen(function* () {
+      const target = new BearerConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Relay",
+        connectionId: "self-relay",
+      });
+      const address = {
+        relayUrl: "https://relay.example.com",
+        route: "1234567890abcdef1234567890abcdef",
+        peerId: "pinned-host",
+      };
+      const profile = new BearerConnectionProfile({
+        connectionId: target.connectionId,
+        environmentId: ENVIRONMENT_ID,
+        label: "Relay",
+        httpBaseUrl: `https://${address.route}.t3-relay.invalid`,
+        wsBaseUrl: `wss://${address.route}.t3-relay.invalid`,
+        selfHostedRelay: address,
+      });
+      const endpoint = {
+        httpBaseUrl: "http://127.0.0.1:49123/",
+        wsBaseUrl: "ws://127.0.0.1:49123/",
+      };
+      const layerBroker = yield* makeDependencies({
+        credentials: [
+          [target.connectionId, new BearerConnectionCredential({ token: "saved-session" })],
+        ],
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
+        Effect.provide(
+          layerBroker.pipe(
+            Layer.provide(
+              Layer.succeed(ClientCapabilities.SelfHostedRelayGateway, {
+                prepare: () => Effect.succeed(endpoint),
+                disconnect: () => Effect.void,
+              }),
+            ),
+          ),
+        ),
+      );
+      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+      expect(prepared.httpBaseUrl).toBe(endpoint.httpBaseUrl);
+      expect(prepared.httpAuthorization).toEqual({ _tag: "Bearer", token: "saved-session" });
+    }),
+  );
+
   it.effect("blocks an old host during discovery before opening orchestration RPC", () =>
     Effect.gen(function* () {
       const layerBroker = yield* makeDependencies({ descriptorProtocolVersion: null });

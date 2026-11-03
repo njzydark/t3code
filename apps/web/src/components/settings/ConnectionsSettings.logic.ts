@@ -1,4 +1,5 @@
 import * as DateTime from "effect/DateTime";
+import { parseRelayPairingUrl } from "@t3tools/relay-transport";
 
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
@@ -242,6 +243,13 @@ export function parsePairingUrlFields(
         ? trimmed
         : `https://${trimmed}`;
     const url = new URL(urlLikeInput, window.location.origin);
+    const relay = parseRelayPairingUrl(url.href);
+    if (relay) {
+      const hash = new URLSearchParams(url.hash.slice(1));
+      hash.delete("token");
+      url.hash = hash.toString();
+      return { host: url.href, pairingCode: relay.token };
+    }
     const hostedPairingRequest = readHostedPairingRequest(url);
     if (hostedPairingRequest) {
       return {
@@ -267,17 +275,26 @@ export function parseRemotePairingFields(input: {
 }): {
   readonly host: string;
   readonly pairingCode: string;
+  readonly pairingUrl?: string;
 } {
   const parsedPairingUrl = parsePairingUrlFields(input.host);
-  if (parsedPairingUrl) return parsedPairingUrl;
-
-  const host = input.host.trim();
-  const pairingCode = input.pairingCode.trim();
+  const host = (parsedPairingUrl?.host ?? input.host).trim();
+  const pairingCode = (parsedPairingUrl?.pairingCode ?? input.pairingCode).trim();
   if (!host) {
     throw new Error("Enter a backend host.");
   }
   if (!pairingCode) {
     throw new Error("Enter a pairing code.");
+  }
+  if (host.includes("#")) {
+    const url = new URL(host);
+    const hash = new URLSearchParams(url.hash.slice(1));
+    if (hash.get("relay") === "1") {
+      hash.set("token", pairingCode);
+      url.hash = hash.toString();
+      const relay = parseRelayPairingUrl(url.href)!;
+      return { host: relay.relayUrl, pairingCode, pairingUrl: url.href };
+    }
   }
   return { host, pairingCode };
 }

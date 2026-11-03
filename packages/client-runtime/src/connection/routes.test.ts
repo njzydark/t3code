@@ -119,6 +119,52 @@ describe("learned routes", () => {
     routes?.map((route) => connectionRouteId(route.target)) ?? null;
   const profileOf = (route: ConnectionRoute) => Option.getOrThrow(route.profile);
 
+  it("keeps relay traffic encrypted and invalidates routing trust when the pinned peer changes", () => {
+    const route = direct(
+      "self-relay",
+      "https://1234567890abcdef1234567890abcdef.t3-relay.invalid/",
+    );
+    const profile = profileOf(route) as BearerConnectionProfile;
+    const pinned = {
+      ...route,
+      profile: Option.some(
+        new BearerConnectionProfile({
+          ...profile,
+          selfHostedRelay: {
+            relayUrl: "https://relay.example.com",
+            route: "1234567890abcdef1234567890abcdef",
+            peerId: "pinned-host",
+          },
+        }),
+      ),
+    };
+    const entry = { ...pinned, enabled: true };
+    expect(
+      mergeLearnedRoutes({
+        entry,
+        activeRoute: pinned,
+        reported: [{ httpBaseUrl: "https://direct.example.com/" }],
+        allowInsecure: true,
+      }),
+    ).toBeNull();
+    const changed = {
+      ...entry,
+      profile: Option.some(
+        new BearerConnectionProfile({
+          ...(profileOf(pinned) as BearerConnectionProfile),
+          selfHostedRelay: {
+            relayUrl: "https://relay.example.com",
+            route: "1234567890abcdef1234567890abcdef",
+            peerId: "different-host",
+          },
+        }),
+      ),
+    };
+    expect(pullRequestRoutingConnectionKey(changed)).not.toBe(
+      pullRequestRoutingConnectionKey(entry),
+    );
+  });
+
   it("learns a LAN address over T3 Connect, ahead of it, using the T3 Connect credential", () => {
     const routes = mergeLearnedRoutes({
       entry: relayOnly,
