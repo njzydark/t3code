@@ -36,9 +36,10 @@ published integration branch rather than rewriting its history.
 
 ## Run Builds
 
-All fork workflows are manual, accept only `codex/build`, and use GitHub-hosted
-runners. They do not publish to npm, submit to app stores, deploy to a cluster,
-or use the upstream's signing, Expo, or Cloudflare credentials.
+Fork workflows start manually from `codex/build` and use GitHub-hosted runners.
+The three build workflows can also be called by **Fork Release**. They do not
+publish to npm, submit to app stores, deploy to a cluster, or use the upstream's
+signing, Expo, or Cloudflare credentials.
 
 Inherited upstream workflows are disabled in this fork's Actions settings because
 they use maintainer runners and services. Their files stay in the repository.
@@ -49,6 +50,58 @@ In GitHub, open **Actions**, choose a workflow, and select **Run workflow** with
 the `codex/build` branch. Download results under that run's **Artifacts**.
 Checksums and build provenance accompany the deliverables. Internal JS bundles
 are intermediate artifacts, not installable applications.
+
+### Publish a Fork Release
+
+Run **Fork Release** on `codex/build`. Choose the desktop/CLI/web target and
+mobile platforms, whether to include Relay archives, and optionally publish the
+Relay images to GHCR. The defaults include all currently supported targets;
+Windows and additional architectures are still not supported. Add user-facing
+changes in `notes`, or edit them in the resulting draft.
+
+One dispatch pins every build to the caller's commit, even if the branch moves
+while macOS runners are queued. Version planning uses **Asia/Shanghai** dates
+and the next sequence among existing `fork-YYYYMMDD.N` tags. For the first
+release on November 4, 2026, based on upstream `0.1.6`:
+
+| Component           | Version                               |
+| ------------------- | ------------------------------------- |
+| Release tag         | `fork-20261104.1`                     |
+| Desktop / CLI / Web | `0.1.6-fork.20261104.1`               |
+| Mobile app version  | `2026.11.4`                           |
+| Android versionCode | `2026110401` (`YYYYMMDDNN`)           |
+| iOS bundle build    | `2611.4.1` (`YYMM.D.N`)               |
+| Relay images        | `0.1.6-fork.20261104.1-core` / `-web` |
+
+The iOS build uses at most 4/2/2 digits instead of Android's ten-digit integer.
+App versions have three integers, without leading zeros. The sequence increases
+for additional releases on the same date and resets on the next date. There is
+a limit of 99 releases per day, and the numeric scheme supports 2000-2099.
+Do not delete or move release tags: they record shipped versions and allocate
+the next date sequence. Use this release workflow for date-versioned upgrades;
+switching back to lower standalone mobile build numbers can prevent upgrades.
+
+All selected builds must succeed before a draft is created. The release job
+verifies their source commit, versions, and checksums, then attaches installable
+assets and build metadata with a combined `SHA256SUMS.txt` and
+`fork-release.json`. Intermediate JS bundles are excluded. The tag points at the
+exact built commit, not the latest branch tip. Rerunning a failed job can refresh
+an existing **draft**, preserving edits to its notes; a published release or a
+tag pointing elsewhere is never overwritten.
+
+Open the draft in **Releases**, review the generated fork-commit list and
+upstream baseline, record upgrade/compatibility notes and actual device testing,
+then publish it. Release assets are separate from expiring Actions artifacts.
+This does not enable automatic app updates or deploy a new image to Kubernetes.
+If GHCR publishing is enabled, image publication happens in its build workflow
+and can succeed even if another platform later fails; rolling tags are therefore
+not a release-success signal. Use versioned image tags or digests for deployments.
+
+Release jobs are serialized to avoid allocating the same date sequence. If an
+entire run fails before creating its tag, the next dispatch may reuse that
+unpublished sequence. Failed builds leave diagnostic Actions artifacts, not a
+partially populated official release. A failure during asset upload can leave
+an incomplete draft: rerun the failed job before publishing it.
 
 ### Desktop, CLI, and Web
 
@@ -101,6 +154,9 @@ the workflow uses a new temporary debug key and labels the result accordingly;
 such builds cannot upgrade an existing installation signed by a previous run.
 Build numbers must increase for normal updates; a rerun of the same workflow
 uses the same default number, so provide a larger explicit number if needed.
+For standalone date builds, supply `version` (for example `2026.11.4`), Android
+`build_number` (`2026110401`), and `ios_build_number` (`2611.4.1`). These optional
+inputs are filled automatically by **Fork Release**.
 
 ### Relay Docker Images
 

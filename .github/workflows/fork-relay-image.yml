@@ -1,6 +1,17 @@
 name: Fork Relay Images
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      publish:
+        type: boolean
+        default: false
+      version:
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       tag:
@@ -64,7 +75,11 @@ jobs:
         env:
           T3CODE_WEB_SOURCEMAP: "0"
           T3CODE_TELEMETRY_CHANNEL: dev
+          APP_VERSION: ${{ inputs.version }}
         run: |
+          if [[ -n "$APP_VERSION" ]]; then
+            node scripts/update-release-package-versions.ts "$APP_VERSION"
+          fi
           vp run --filter @t3tools/web build
           test -f apps/web/dist/index.html
           test -f apps/web/dist/relay-worker.js
