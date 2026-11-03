@@ -12,6 +12,7 @@ import * as NativeWebSocket from "../native/nativeWebSocket";
 import * as Persistence from "../persistence/layer";
 import { disposeOnFoundationReplace, type FoundationHotModule } from "./foundation-fast-refresh";
 import { whenProtectedDataAvailable } from "./protectedData";
+import * as SelfHostedRelay from "./selfHostedRelay";
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
@@ -27,7 +28,8 @@ type RuntimeLayerSource =
   | typeof Dpop.layer
   | typeof layerHttpClient
   | typeof Persistence.layer
-  | typeof Tracing.layer;
+  | typeof Tracing.layer
+  | typeof SelfHostedRelay.layer;
 
 const layerRuntime = Layer.merge(
   ManagedRelayLayer.layer(configuredRelayUrl()),
@@ -37,6 +39,7 @@ const layerRuntime = Layer.merge(
   Layer.provideMerge(layerHttpClient),
   Layer.provideMerge(Tracing.layer.pipe(Layer.provide(layerHttpClient))),
   Layer.provideMerge(Persistence.layer),
+  Layer.provideMerge(SelfHostedRelay.layer),
   // These layers read the keychain and the database while they build, and a
   // failed build is kept for the life of the process.
   Layer.provide(Layer.effectDiscard(Effect.promise(whenProtectedDataAvailable))),
