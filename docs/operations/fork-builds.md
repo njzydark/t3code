@@ -40,6 +40,11 @@ All fork workflows are manual, accept only `codex/build`, and use GitHub-hosted
 runners. They do not publish to npm, submit to app stores, deploy to a cluster,
 or use the upstream's signing, Expo, or Cloudflare credentials.
 
+Inherited upstream workflows are disabled in this fork's Actions settings because
+they use maintainer runners and services. Their files stay in the repository.
+Checks for a pull request submitted upstream still run in the upstream repository.
+Re-enable an inherited workflow only after configuring its required services.
+
 In GitHub, open **Actions**, choose a workflow, and select **Run workflow** with
 the `codex/build` branch. Download results under that run's **Artifacts**.
 Checksums and build provenance accompany the deliverables. Internal JS bundles
