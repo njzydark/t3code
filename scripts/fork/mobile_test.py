@@ -56,12 +56,25 @@ class MobileBuildTests(unittest.TestCase):
     }
 }
 '''
-            gradle.write_text(source)
-            native.prepare_android(root, "123")
-            actual = gradle.read_text()
-            self.assertIn("versionCode 123", actual)
-            self.assertEqual(actual.count("signingConfig signingConfigs.forkSelfUse"), 2)
-            self.assertIn('System.getenv("FORK_ANDROID_KEYSTORE")', actual)
+            for declaration in [
+                'applicationId "com.t3tools.t3code"',
+                "applicationId 'com.t3tools.t3code'",
+                "applicationId = 'com.t3tools.t3code'",
+            ]:
+                with self.subTest(declaration=declaration):
+                    gradle.write_text(source.replace('applicationId "com.t3tools.t3code"', declaration))
+                    native.prepare_android(root, "123")
+                    actual = gradle.read_text()
+                    self.assertIn("versionCode 123", actual)
+                    self.assertEqual(actual.count("signingConfig signingConfigs.forkSelfUse"), 2)
+                    self.assertIn('System.getenv("FORK_ANDROID_KEYSTORE")', actual)
+            for invalid in [
+                source.replace("com.t3tools.t3code", "com.example.other"),
+                source.replace('applicationId "com.t3tools.t3code"', 'applicationId "com.t3tools.t3code"\n        applicationId "com.example.other"'),
+            ]:
+                gradle.write_text(invalid)
+                with self.assertRaisesRegex(ValueError, "package changed"):
+                    native.prepare_android(root, "123")
             gradle.write_text(source.replace("signingConfigs {", "signingConfigs{"))
             with self.assertRaisesRegex(ValueError, "template changed"):
                 native.prepare_android(root, "123")

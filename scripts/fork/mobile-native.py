@@ -53,7 +53,10 @@ def prepare_android(native, build_number):
     require(updates.get(ANDROID_NS + "value") == "false", "Native Android OTA is not disabled")
     path = native / "app/build.gradle"
     source = path.read_text()
-    require(f'applicationId "{APP_ID}"' in source, "Generated Android package changed")
+    application_ids = re.findall(
+        r"""(?m)^\s*applicationId\s*(?:=\s*)?(['"])([^'"\r\n]+)\1\s*$""", source
+    )
+    require([value for _, value in application_ids] == [APP_ID], "Generated Android package changed")
     source, count = re.subn(r"(?m)^(\s*versionCode\s+)\d+\s*$", rf"\g<1>{build_number}", source)
     require(count == 1, "Expected exactly one generated Android versionCode")
     marker = "    signingConfigs {"
