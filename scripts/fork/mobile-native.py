@@ -79,8 +79,12 @@ def prepare_android(native, build_number):
 
 def android_sdk_packages(catalog):
     versions = tomllib.loads(catalog.read_text())["versions"]
+    compile_sdk = str(versions["compileSdk"])
+    # Google's base platform package names include the minor version starting at API 37.
+    if compile_sdk.isdecimal() and int(compile_sdk) >= 37:
+        compile_sdk += ".0"
     return [
-        f"platforms;android-{versions['compileSdk']}",
+        f"platforms;android-{compile_sdk}",
         f"build-tools;{versions['buildTools']}",
         f"ndk;{versions['ndkVersion']}",
     ]
