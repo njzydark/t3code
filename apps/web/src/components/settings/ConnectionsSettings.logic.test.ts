@@ -6,7 +6,26 @@ import {
   resolveTailscaleServeBaseUrl,
   selectQrEndpointOption,
   togglePairingScopeSelection,
+  parsePairingUrlFields,
+  parseRemotePairingFields,
 } from "./ConnectionsSettings.logic";
+
+it("retains the pinned relay address while splitting and submitting a pasted pairing link", () => {
+  vi.stubGlobal("window", { location: { origin: "https://app.example.test" } });
+  try {
+    const base =
+      "https://relay.example.test/pair#relay=1&route=1234567890abcdef1234567890abcdef&peer=12D3KooWTestHostIdentityForRelay";
+    const split = parsePairingUrlFields(`${base}&token=one-time-code`);
+    expect(split).toEqual({ host: base, pairingCode: "one-time-code" });
+    expect(parseRemotePairingFields(split!)).toEqual({
+      host: "https://relay.example.test",
+      pairingCode: "one-time-code",
+      pairingUrl: `${base}&token=one-time-code`,
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 describe("togglePairingScopeSelection", () => {
   it.each([

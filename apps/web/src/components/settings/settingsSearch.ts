@@ -1150,6 +1150,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["link peer another machine vps agents work there handoff pairing code"],
   },
   {
+    id: "self-hosted-relay",
+    title: "Self-hosted relay",
+    to: "/settings/access",
+    searchTerms: ["relay vps host encrypted registration token connect pairing self hosted"],
+  },
+  {
     id: "remote-environments",
     title: "Environments",
     to: "/settings/connections",
