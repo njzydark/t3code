@@ -2,12 +2,22 @@
 
 Run **Fork mobile self-use** (`.github/workflows/fork-mobile.yml`) manually on
 `codex/build` in a fork. Other branches and the upstream repository are skipped.
-Select `ios`, `android`, or `all`. The optional build number is a positive integer
-up to 2100000000, without leading zeros; empty uses `github.run_number`. Increase
-it for Android upgrades. Re-running a job reuses its build number.
+Select `ios`, `android`, or `all`. The optional Android build number is a positive
+integer up to 2100000000, without leading zeros; empty uses `github.run_number`.
+An optional `ios_build_number` overrides it on iOS and accepts up to three
+components with at most 4/2/2 digits. Without an override, the shared build number
+must also fit the iOS format. `version` optionally sets the three-integer mobile
+app version, including the iOS extensions. Increase build numbers for upgrades;
+re-running a job reuses its build number.
 
-The workflow only reads repository contents and uploads seven-day Actions
-artifacts. It does not create releases, push, use EAS, contact Expo account
+**Fork Release** calls this same workflow with dated versions. For example,
+November 4, 2026's first release uses app version `2026.11.4`, Android build
+`2026110401`, and iOS build `2611.4.1`. See
+[fork releases](../../docs/operations/fork-builds.md#publish-a-fork-release).
+
+The mobile workflow only reads repository contents and uploads seven-day Actions
+artifacts; the release caller separately attaches these to a draft. The mobile
+workflow does not create releases, push, use EAS, contact Expo account
 services, or require an Expo account/token. Dependency downloads still require
 network access. Enable Actions in the fork first; manual dispatch also requires
 GitHub to recognize this workflow from the repository's default branch.
