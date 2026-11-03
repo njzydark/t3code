@@ -1,0 +1,270 @@
+name: Fork desktop, CLI and web builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Native artifact target (Windows is not supported; Linux desktop includes CLI)
+        type: choice
+        default: all
+        options:
+          - all
+          - desktop-macos-arm64
+          - desktop-linux-x64
+          - cli-linux-x64
+          - web
+      version:
+        description: Optional SemVer; defaults to app-version-fork.run.attempt
+        type: string
+        required: false
+        default: ""
+      web_origin:
+        description: Optional static web origin for generated pairing links (https://your.host, no trailing slash)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-build-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+env:
+  VP_REMOTE_CACHE: "off"
+  VP_REMOTE_CACHE_URL: ""
+  T3CODE_TELEMETRY_CHANNEL: dev
+  T3CODE_WEB_SOURCEMAP: "false"
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  prepare:
+    if: github.event.repository.fork == true && github.ref == 'refs/heads/codex/build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      has_desktop: ${{ steps.plan.outputs.has_desktop }}
+      cli: ${{ steps.plan.outputs.cli }}
+      web: ${{ steps.plan.outputs.web }}
+      bundle: ${{ steps.plan.outputs.bundle }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install: "false"
+      - id: plan
+        name: Validate dispatch and select native targets
+        env:
+          FORK_TARGET: ${{ inputs.target }}
+          FORK_VERSION: ${{ inputs.version }}
+          FORK_WEB_ORIGIN: ${{ inputs.web_origin }}
+        run: node scripts/fork/prepare-build.ts
+
+  bundle:
+    needs: prepare
+    if: needs.prepare.outputs.bundle == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+      HAS_DESKTOP: ${{ needs.prepare.outputs.has_desktop }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Install browser secret helper libraries
+        if: env.HAS_DESKTOP == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+      - name: Align versions and build local-client bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$APP_VERSION"
+          if [[ "$HAS_DESKTOP" == true ]]; then
+            vp run build:desktop
+          else
+            vp run --filter t3 build
+          fi
+      - name: Archive shared bundle with provenance and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-fork/internal
+          paths=(apps/server/dist)
+          if [[ "$HAS_DESKTOP" == true ]]; then paths+=(apps/desktop/dist-electron); fi
+          tar -czf "release-fork/internal/fork-js-bundle-${APP_VERSION}.tar.gz" "${paths[@]}"
+          node --input-type=module <<'NODE'
+          import { writeProvenance } from './scripts/fork/prepare-build.ts';
+          await writeProvenance('release-fork/internal', 'internal', process.env.APP_VERSION);
+          NODE
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fork-internal-js-bundle
+          path: release-fork/internal/*
+          if-no-files-found: error
+          retention-days: 1
+
+  desktop:
+    needs: [prepare, bundle]
+    if: needs.prepare.outputs.has_desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.desktop) }}
+    name: Desktop ${{ matrix.platform }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+      PLATFORM: ${{ matrix.platform }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust }}
+      - name: Install Linux desktop build libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libsecret-1-dev pkg-config imagemagick libwayland-dev libxkbcommon-dev
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fork-internal-js-bundle
+          path: release-fork/internal
+      - name: Verify and extract shared bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-fork/internal && shasum -a 256 -c fork-internal-SHA256SUMS.txt)
+          tar -xzf "release-fork/internal/fork-js-bundle-${APP_VERSION}.tar.gz"
+      - name: Package unsigned desktop with persistent updater guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$APP_VERSION"
+          node scripts/fork/desktop-build.ts "$PLATFORM" "$ARCH" "$APP_VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fork-${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          path: release-fork/${{ matrix.target }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+  cli:
+    needs: [prepare, bundle]
+    if: needs.prepare.outputs.cli == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+      - name: Install standalone CLI build libraries
+        run: sudo apt-get update && sudo apt-get install -y patchelf libatomic1 build-essential pkg-config
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fork-internal-js-bundle
+          path: release-fork/internal
+      - name: Verify and extract shared bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-fork/internal && sha256sum -c fork-internal-SHA256SUMS.txt)
+          tar -xzf "release-fork/internal/fork-js-bundle-${APP_VERSION}.tar.gz"
+      - name: Build and smoke-test standalone CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$APP_VERSION"
+          node scripts/fork/cli-build.ts "$APP_VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fork-cli-linux-x64-${{ needs.prepare.outputs.version }}
+          path: release-fork/cli-linux-x64/*
+          if-no-files-found: error
+          retention-days: 14
+
+  web:
+    needs: prepare
+    if: needs.prepare.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+      VITE_HOSTED_APP_CHANNEL: latest
+      VITE_HOSTED_APP_URL: ${{ inputs.web_origin }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/web... --filter=@t3tools/scripts...
+      - name: Build static client without cloud credentials or source maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$APP_VERSION"
+          vp run --filter @t3tools/web build
+          node --input-type=module <<'NODE'
+          import { readdir } from 'node:fs/promises';
+          const files = await readdir('apps/web/dist', { recursive: true });
+          if (!files.includes('index.html') || files.some(file => file.endsWith('.map'))) {
+            throw new Error('Missing static entrypoint or unexpected source maps');
+          }
+          NODE
+          mkdir -p release-fork/web
+          tar -czf "release-fork/web/t3-web-${APP_VERSION}.tar.gz" -C apps/web/dist .
+          node --input-type=module <<'NODE'
+          import { writeProvenance } from './scripts/fork/prepare-build.ts';
+          await writeProvenance('release-fork/web', 'web', process.env.APP_VERSION);
+          NODE
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fork-web-${{ needs.prepare.outputs.version }}
+          path: release-fork/web/*
+          if-no-files-found: error
+          retention-days: 14
