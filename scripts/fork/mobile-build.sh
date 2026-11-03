@@ -42,8 +42,9 @@ PY
   command -v pod >/dev/null || fail 'The selected macOS image must provide CocoaPods.'
 else
   [[ "$(java -version 2>&1 | head -1)" == *'"17.'* ]] || fail 'Android builds require JDK 17.'
-  command -v sdkmanager >/dev/null || fail 'The Ubuntu image must provide Android sdkmanager on PATH.'
   [[ -d "${ANDROID_HOME:-}" ]] || fail 'ANDROID_HOME must point to the hosted runner Android SDK.'
+  export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+  command -v sdkmanager >/dev/null || fail 'Android command-line tools are missing under ANDROID_HOME/cmdline-tools/latest.'
   supplied=0
   for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
     [[ -z "${!key:-}" ]] || supplied=$((supplied + 1))
