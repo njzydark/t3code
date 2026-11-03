@@ -1,0 +1,33 @@
+{
+  "name": "@t3tools/relay-transport",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./protocol": "./src/protocol.ts",
+    "./secure": "./src/secure.ts",
+    "./network": "./src/network.ts",
+    "./local-bridge": "./src/localBridge.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@libp2p/crypto": "5.2.0",
+    "@libp2p/interface": "3.4.0",
+    "@libp2p/logger": "6.2.0",
+    "@libp2p/noise": "17.0.7",
+    "@libp2p/peer-id": "6.0.18",
+    "@libp2p/utils": "7.4.5",
+    "uint8arraylist": "3.0.2",
+    "ws": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/ws": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

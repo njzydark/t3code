@@ -1,11 +1,13 @@
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
+import { parseRelayPairingUrl } from "@t3tools/relay-transport";
 
 export interface HostedPairingRequest {
   readonly host: string;
   readonly token: string;
   readonly label: string;
+  readonly pairingUrl?: string;
 }
 
 export type HostedAppChannel = "latest" | "nightly";
@@ -49,6 +51,18 @@ export function isHostedStaticApp(url?: URL): boolean {
 }
 
 export function readHostedPairingRequest(url: URL = new URL(window.location.href)) {
+  try {
+    const relay = parseRelayPairingUrl(url.href);
+    if (relay)
+      return {
+        host: relay.relayUrl,
+        token: relay.token,
+        label: "Self-hosted relay environment",
+        pairingUrl: url.href,
+      } satisfies HostedPairingRequest;
+  } catch {
+    return null;
+  }
   const host = url.searchParams.get("host")?.trim() ?? "";
   const token = getPairingTokenFromUrl(url)?.trim() ?? "";
   const label = url.searchParams.get("label")?.trim() ?? "";
