@@ -3,6 +3,9 @@
 Connect a phone, browser, or another desktop app to T3 Code running on a different
 machine. That machine must stay running and reachable while you work.
 
+This fork also supports an [encrypted self-hosted relay](./self-hosted-relay.md)
+for environments behind NAT, using a public VPS and clients built from this fork.
+
 ## T3 Connect
 
 T3 Connect makes an environment available to your other devices without setting

@@ -220,6 +220,7 @@ export const make = Effect.gen(function* () {
   const driver = yield* ConnectionDriver.ConnectionDriver;
   const wakeups = yield* ConnectionWakeups.ConnectionWakeups;
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
+  const selfHostedRelay = yield* ClientCapabilities.SelfHostedRelayGateway;
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
@@ -890,6 +891,9 @@ export const make = Effect.gen(function* () {
 
     for (const route of connectionRoutes(entry)) {
       const profile = Option.getOrNull(route.profile);
+      if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) {
+        yield* selfHostedRelay.disconnect(profile.selfHostedRelay);
+      }
       if (profile !== null && isSshConnectionProfile(profile)) {
         yield* disconnectSsh(environmentId, profile);
       }
@@ -995,6 +999,9 @@ export const make = Effect.gen(function* () {
         if (remaining.length === 0) return yield* removeLocked(environmentId);
         yield* replaceRoutesLocked(entry, remaining);
         const profile = Option.getOrNull(route.profile);
+        if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) {
+          yield* selfHostedRelay.disconnect(profile.selfHostedRelay);
+        }
         if (profile !== null && isSshConnectionProfile(profile)) {
           yield* disconnectSsh(environmentId, profile);
         }
@@ -1102,6 +1109,9 @@ export const make = Effect.gen(function* () {
         if (!enabled) {
           for (const route of connectionRoutes(entry)) {
             const profile = Option.getOrNull(route.profile);
+            if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) {
+              yield* selfHostedRelay.disconnect(profile.selfHostedRelay);
+            }
             if (profile !== null && isSshConnectionProfile(profile)) {
               yield* disconnectSsh(environmentId, profile);
             }

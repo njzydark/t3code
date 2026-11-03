@@ -1,5 +1,7 @@
 import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
 import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import { parseRelayPairingUrl } from "@t3tools/relay-transport";
+import { virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -101,7 +103,20 @@ function differentMachineError(label: string) {
 export const preparePairingRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.preparePairingRegistration",
 )(function* (input: PairingConnectionInput) {
-  const target = yield* resolvePairingTarget(input);
+  const selfHostedRelay = yield* Effect.try({
+    try: () => (input.pairingUrl ? parseRelayPairingUrl(input.pairingUrl) : null),
+    catch: () =>
+      new ConnectionBlockedError({
+        reason: "configuration",
+        detail: "The self-hosted relay pairing link is invalid.",
+      }),
+  });
+  const target = selfHostedRelay
+    ? {
+        ...(yield* (yield* ClientCapabilities.SelfHostedRelayGateway).prepare(selfHostedRelay)),
+        credential: selfHostedRelay.token,
+      }
+    : yield* resolvePairingTarget(input);
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
     httpBaseUrl: target.httpBaseUrl,
@@ -113,7 +128,13 @@ export const preparePairingRegistration = Effect.fn(
   ) {
     return yield* differentMachineError(descriptor.label);
   }
-  const connectionId = bearerConnectionId(descriptor.environmentId, target.httpBaseUrl);
+  const savedEndpoint = selfHostedRelay
+    ? {
+        httpBaseUrl: virtualRelayOrigin(selfHostedRelay.route),
+        wsBaseUrl: virtualRelayOrigin(selfHostedRelay.route).replace(/^https:/, "wss:"),
+      }
+    : target;
+  const connectionId = bearerConnectionId(descriptor.environmentId, savedEndpoint.httpBaseUrl);
   const route = {
     target: new BearerConnectionTarget({
       environmentId: descriptor.environmentId,
@@ -124,8 +145,17 @@ export const preparePairingRegistration = Effect.fn(
       connectionId,
       environmentId: descriptor.environmentId,
       label: descriptor.label,
-      httpBaseUrl: target.httpBaseUrl,
-      wsBaseUrl: target.wsBaseUrl,
+      httpBaseUrl: savedEndpoint.httpBaseUrl,
+      wsBaseUrl: savedEndpoint.wsBaseUrl,
+      ...(selfHostedRelay
+        ? {
+            selfHostedRelay: {
+              relayUrl: selfHostedRelay.relayUrl,
+              route: selfHostedRelay.route,
+              peerId: selfHostedRelay.peerId,
+            },
+          }
+        : {}),
     }),
   };
   // The registry checks again under its lease; this early check keeps a refused code unspent.
@@ -218,6 +248,13 @@ export const prepareBearerConnectionUpdate = Effect.fn(
   }
 
   const credential = options.credential;
+  if (entry.profile.value.selfHostedRelay) {
+    return yield* new ConnectionBlockedError({
+      reason: "configuration",
+      detail:
+        "To change a self-hosted relay address or host identity, pair again with a new link from that host.",
+    });
+  }
   if (Option.isNone(credential) || !isBearerCredential(credential.value)) {
     return yield* new ConnectionBlockedError({
       reason: "authentication",
@@ -304,6 +341,7 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
+  const selfHostedRelay = yield* ClientCapabilities.SelfHostedRelayGateway;
 
   // Provisioning retains the delegated onboarding operation spans.
   return ConnectionOnboarding.of({
@@ -314,6 +352,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry),
       Effect.provideService(ClientCapabilities.ClientPresentation, presentation),
       Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(ClientCapabilities.SelfHostedRelayGateway, selfHostedRelay),
     ),
     registerSsh: Effect.fnUntraced(
       function* (input) {
