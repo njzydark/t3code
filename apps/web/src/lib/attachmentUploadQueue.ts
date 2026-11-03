@@ -39,6 +39,7 @@ import { attachmentEnvironment } from "../state/attachments";
 import { readEnvironmentScope, readPreparedConnection } from "../state/session";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
 import { m } from "../i18n/messages";
+import { relayNetwork } from "./selfHostedRelay";
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
@@ -149,6 +150,40 @@ function uploadBytes(input: {
   readonly signal: AbortSignal;
   readonly onProgress: (progress: number) => void;
 }): Promise<void> {
+  if (relayNetwork.transport.routeForUrl(input.url)) {
+    const signal = AbortSignal.any([input.signal, AbortSignal.timeout(UPLOAD_TIMEOUT_MS)]);
+    let uploaded = 0;
+    const body = input.file.stream().pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, output) {
+          uploaded += chunk.length;
+          input.onProgress(input.file.size === 0 ? 1 : uploaded / input.file.size);
+          output.enqueue(chunk);
+        },
+      }),
+    );
+    return relayNetwork.transport
+      .request({
+        url: input.url,
+        method: "POST",
+        headers: new Headers({ "Content-Type": input.mimeType }),
+        body,
+        signal,
+      })
+      .then(async (response) => {
+        if (response.status < 200 || response.status >= 300) {
+          await response.body?.cancel();
+          throw new Error(`Upload rejected (${response.status})`);
+        }
+        const reader = response.body?.getReader();
+        if (reader) {
+          while (!(await reader.read()).done) {}
+          reader.releaseLock();
+        }
+        input.onProgress(1);
+      })
+      ;
+  }
   const xhr = new XMLHttpRequest();
   return new Promise<void>((resolve, reject) => {
     xhr.open("POST", input.url, true);

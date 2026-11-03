@@ -33,6 +33,13 @@ describe("extractPairingUrlFromQrPayload", () => {
 });
 
 describe("parsePairingUrl", () => {
+  it("keeps relay routing and the pinned host identity when splitting and rebuilding a pairing link", () => {
+    const link =
+      "https://relay.example.com/pair#relay=1&route=1234567890abcdef1234567890abcdef&peer=12D3KooWTestIdentity&token=pairing-code";
+    const parsed = parsePairingUrl(link);
+    expect(parsed.code).toBe("pairing-code");
+    expect(buildPairingUrl(parsed.host, parsed.code)).toBe(link);
+  });
   it("reads hosted pairing links into backend host fields", () => {
     expect(
       parsePairingUrl(

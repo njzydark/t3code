@@ -192,6 +192,9 @@ const T3_CONNECT_NAME = "T3 Connect";
 
 /** The route's label in English. Display sites use `connectionRouteLabelText`. */
 export function connectionRouteLabel(route: ConnectionRoute): string {
+  const profile = Option.getOrNull(route.profile);
+  if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay)
+    return "Self-hosted relay";
   switch (connectionRouteKind(route)) {
     case "relay":
       return T3_CONNECT_NAME;
@@ -234,6 +237,9 @@ export function connectionRouteLabelText(
 }
 
 export function connectionRouteAddress(route: ConnectionRoute): string | null {
+  const relayProfile = Option.getOrNull(route.profile);
+  if (relayProfile?._tag === "BearerConnectionProfile" && relayProfile.selfHostedRelay)
+    return relayProfile.selfHostedRelay.relayUrl;
   if (route.target._tag === "SshConnectionTarget") {
     const profile = Option.getOrNull(route.profile);
     return profile?._tag === "SshConnectionProfile" ? profile.target.alias : null;
@@ -267,6 +273,9 @@ export function mergeLearnedRoutes(input: {
     return null;
   }
   const activeProfile = Option.getOrNull(input.activeRoute.profile);
+  if (activeProfile?._tag === "BearerConnectionProfile" && activeProfile.selfHostedRelay) {
+    return null;
+  }
   const authorization =
     active._tag === "RelayConnectionTarget" ||
     (activeProfile?._tag === "BearerConnectionProfile" &&
