@@ -1,0 +1,98 @@
+name: Fork mobile self-use
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Device build target
+        type: choice
+        options: [ios, android, all]
+        default: all
+        required: true
+      build_number:
+        description: Positive build number (1-2100000000); empty uses the workflow run number
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-mobile-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      github.event.repository.fork == true &&
+      github.ref == 'refs/heads/codex/build'
+    name: ${{ matrix.target }} self-use build
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.target == 'all' && '["ios","android"]' || format('["{0}"]', inputs.target)) }}
+    runs-on: ${{ matrix.target == 'ios' && 'macos-26' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    env:
+      CI: "1"
+      APP_VARIANT: production
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      MOBILE_VERSION_POLICY: appVersion
+      EXPO_NO_DOTENV: "1"
+      EXPO_NO_TELEMETRY: "1"
+      NODE_OPTIONS: --max-old-space-size=4096
+      MOBILE_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Select pinned Xcode
+        if: matrix.target == 'ios'
+        run: |
+          test -d /Applications/Xcode_26.6.app/Contents/Developer || {
+            echo '::error::macos-26 no longer supplies Xcode 26.6. Review scripts/fork/mobile.md before updating the pin.'
+            exit 1
+          }
+          echo 'DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer' >> "$GITHUB_ENV"
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --frozen-lockfile --filter=@t3tools/mobile... --filter=@t3tools/scripts...
+
+      - name: Setup Java
+        if: matrix.target == 'android'
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Check packaging helpers
+        run: python3 -B scripts/fork/mobile_test.py
+
+      - name: Build unsigned iOS device IPA
+        if: matrix.target == 'ios'
+        run: bash scripts/fork/mobile-build.sh ios
+
+      - name: Build signed Android release APK
+        if: matrix.target == 'android'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash scripts/fork/mobile-build.sh android
+
+      - name: Upload verified build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: t3-code-${{ matrix.target }}-self-use-${{ env.MOBILE_BUILD_NUMBER }}
+          path: artifacts/fork-mobile/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
