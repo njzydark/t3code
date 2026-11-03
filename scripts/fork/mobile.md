@@ -35,7 +35,7 @@ publisher. Back up anything needed before uninstalling an existing app.
 The standard GitHub `macos-26` runner is pinned to
 `/Applications/Xcode_26.6.app/Contents/Developer`, Xcode 26.6 / device SDK 26.5.
 This matches the previously working local toolchain. Availability was checked
-against the [runner image inventory](https://github.com/actions/runner-images/blob/2cdd82f39871ec1e98584ee64008bc1261ce427f/images/macos/macos-26-Readme.md#xcode).
+against the [ARM64 runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#xcode).
 The upstream EAS configuration currently requests a newer image; this workflow
 does not use EAS. Newer SDK-only code guarded in native sources stays guarded.
 The build fails if the pinned toolchain disappears, SDK versions change, or
