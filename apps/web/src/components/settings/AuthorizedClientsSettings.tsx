@@ -1,8 +1,10 @@
+import { useAtomValue } from "@effect/atom-react";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import { PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
   AuthAccessWriteScope,
+  AuthRelayReadScope,
   AuthDiagnosticsReadScope,
   AuthOrchestrationReadScope,
   AuthFilesystemReadScope,
@@ -14,7 +16,7 @@ import {
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
 } from "@t3tools/contracts";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -52,7 +54,11 @@ import {
   type ServerClientSessionRecord,
   type ServerPairingLinkRecord,
 } from "~/environments/primary";
-import { readEnvironmentScope } from "~/state/session";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import { pairSelfHostedRelay, selfHostedRelayStatus } from "~/state/selfHostedRelay";
+import { useEnvironmentQuery } from "~/state/query";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { ManagedControl } from "../ManagedPolicy";
@@ -113,6 +119,25 @@ function AccessScopeSummary({
   );
 }
 
+function directPairingUrl(
+  credential: string,
+  endpointUrl: string | null | undefined,
+  endpoints: ReadonlyArray<AdvertisedEndpoint>,
+  defaultEndpointKey: string | null,
+) {
+  const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
+  if (endpoint) return resolveAdvertisedEndpointPairingUrl(endpoint, credential);
+  if (endpointUrl)
+    return (
+      resolveHostedPairingUrl(endpointUrl, credential) ??
+      resolveDesktopPairingUrl(endpointUrl, credential)
+    );
+  return isLoopbackHostname(window.location.hostname) ||
+    !["http:", "https:"].includes(window.location.protocol)
+    ? null
+    : resolveCurrentOriginPairingUrl(credential);
+}
+
 function endpointRowClassName(isAvailable: boolean) {
   return cn(
     "relative first:rounded-t-xl last:rounded-b-xl px-3 py-3 sm:px-4",
@@ -124,6 +149,7 @@ type PairingLinkListRowProps = {
   pairingLink: ServerPairingLinkRecord;
   credential: string | undefined;
   defaultShareOpen: boolean;
+  pairingUrl: string | undefined;
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
@@ -136,6 +162,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   pairingLink,
   credential,
   defaultShareOpen,
+  pairingUrl,
   endpointUrl,
   endpoints,
   defaultEndpointKey,
@@ -150,17 +177,6 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const [qrEndpointId, setQrEndpointId] = useState<string | null>(null);
   const qrPanelId = useId();
 
-  const currentOriginPairingUrl = credential ? resolveCurrentOriginPairingUrl(credential) : null;
-  const hostedPairingUrl =
-    credential && endpointUrl != null && endpointUrl !== ""
-      ? resolveHostedPairingUrl(endpointUrl, credential)
-      : null;
-  const endpointPairingUrl = (() => {
-    const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
-    return endpoint && credential
-      ? resolveAdvertisedEndpointPairingUrl(endpoint, credential)
-      : null;
-  })();
   const endpointCopyOptions = (() => {
     const options: Array<{
       readonly id: string;
@@ -171,6 +187,17 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       readonly qrShareable: boolean;
     }> = [];
     if (!credential) return options;
+    if (pairingUrl)
+      return [
+        {
+          id: "self-hosted-relay",
+          preferenceKey: "self-hosted-relay",
+          label: "Self-hosted relay",
+          url: pairingUrl,
+          detail: new URL(pairingUrl).origin,
+          qrShareable: !isLoopbackHostname(new URL(pairingUrl).hostname),
+        },
+      ];
     for (const endpoint of endpoints) {
       if (endpoint.status === "unavailable") {
         continue;
@@ -188,12 +215,8 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     return options;
   })();
   const shareablePairingUrl =
-    endpointPairingUrl ??
-    (credential && endpointUrl != null && endpointUrl !== ""
-      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential))
-      : isLoopbackHostname(window.location.hostname)
-        ? null
-        : currentOriginPairingUrl);
+    pairingUrl ??
+    (credential ? directPairingUrl(credential, endpointUrl, endpoints, defaultEndpointKey) : null);
   const [failedCopyValue, setFailedCopyValue] = useState<string | null>(null);
   const revealValue = failedCopyValue ?? shareablePairingUrl ?? credential ?? "";
   const isRevealValueUrl = revealValue !== credential;
@@ -567,7 +590,10 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
 });
 
 type AuthorizedClientsHeaderActionProps = {
-  onPairingLinkCreated: (result: AuthPairingCredentialResult) => void;
+  onPairingLinkCreated: (result: AuthPairingCredentialResult, pairingUrl?: string) => void;
+  endpointUrl: string | null | undefined;
+  endpoints: ReadonlyArray<AdvertisedEndpoint>;
+  defaultEndpointKey: string | null;
   clientSessions: ReadonlyArray<ServerClientSessionRecord> | null;
   isRevokingOtherClients: boolean;
   onRevokeOtherClients: () => void;
@@ -575,6 +601,9 @@ type AuthorizedClientsHeaderActionProps = {
 };
 
 export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderAction({
+  endpointUrl,
+  endpoints,
+  defaultEndpointKey,
   onPairingLinkCreated,
   clientSessions,
   isRevokingOtherClients,
@@ -583,6 +612,33 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
 }: AuthorizedClientsHeaderActionProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const pairingDenial = managedCapabilityDenial(usePrimaryManagedPolicy(), "remoteClients");
+  const canReadRelay = useEnvironmentScope(primaryEnvironmentId, AuthRelayReadScope);
+  const relay = useEnvironmentQuery(
+    primaryEnvironmentId && canReadRelay
+      ? selfHostedRelayStatus({ environmentId: primaryEnvironmentId, input: {} })
+      : null,
+  );
+  const canPairViaRelay = useAtomValue(pairSelfHostedRelay.permissionAtom(primaryEnvironmentId));
+  const pairViaRelay = useAtomCommand(pairSelfHostedRelay, { reportFailure: false });
+  const [connectionType, setConnectionType] = useState<"direct" | "relay">("direct");
+  const [createdPairing, setCreatedPairing] = useState<{
+    credential: AuthPairingCredentialResult;
+    url: string | null;
+  } | null>(null);
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: "pairing link",
+    onError: (error) =>
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not copy pairing link",
+          description: `${error.message} You can select and copy the value manually.`,
+        }),
+      ),
+  });
+  const relayUnavailable =
+    connectionType === "relay" &&
+    (relay.error !== null || relay.data?.phase !== "connected" || !canPairViaRelay);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
   const [pairingScopes, setPairingScopes] = useState<ReadonlyArray<AuthGrantScope>>([
@@ -591,26 +647,47 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   const selectedScopes = pairingScopes.filter((scope) => delegatableScopes.includes(scope));
   const [isCreatingPairingLink, setIsCreatingPairingLink] = useState(false);
 
+  const handleDialogOpenChange = (open: boolean) => {
+    if (isCreatingPairingLink) return;
+    setDialogOpen(open);
+    if (!open) {
+      setCreatedPairing(null);
+      setConnectionType("direct");
+      setPairingLabel("");
+      setPairingScopes(
+        AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
+      );
+    }
+  };
+
   const handleCreatePairingLink = async () => {
     if (
       primaryEnvironmentId === null ||
       selectedScopes.length === 0 ||
       !readEnvironmentScope(primaryEnvironmentId, AuthAccessWriteScope) ||
-      !selectedScopes.every((scope) => readEnvironmentScope(primaryEnvironmentId, scope))
+      !selectedScopes.every((scope) => readEnvironmentScope(primaryEnvironmentId, scope)) ||
+      relayUnavailable
     )
       return;
     setIsCreatingPairingLink(true);
     const settled = await settlePromise(async () => {
-      const created = await createServerPairingCredential({
-        label: pairingLabel,
+      const input = {
+        ...(pairingLabel.trim() ? { label: pairingLabel.trim() } : {}),
         scopes: selectedScopes,
-      });
-      onPairingLinkCreated(created);
-      setPairingLabel("");
-      setPairingScopes(
-        AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
-      );
-      setDialogOpen(false);
+      };
+      if (connectionType === "relay") {
+        const result = await pairViaRelay({ environmentId: primaryEnvironmentId, input });
+        if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+        onPairingLinkCreated(result.value, result.value.url);
+        setCreatedPairing({ credential: result.value, url: result.value.url });
+      } else {
+        const created = await createServerPairingCredential(input);
+        onPairingLinkCreated(created);
+        setCreatedPairing({
+          credential: created,
+          url: directPairingUrl(created.credential, endpointUrl, endpoints, defaultEndpointKey),
+        });
+      }
     });
     if (settled._tag === "Failure") {
       const error = Cause.squash(settled.cause);
@@ -650,15 +727,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       ) : null}
       <Dialog
         open={dialogOpen && pairingDenial === undefined}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) {
-            setPairingLabel("");
-            setPairingScopes(
-              AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
-            );
-          }
-        }}
+        onOpenChange={handleDialogOpenChange}
       >
         {pairingDenial === undefined ? (
           <DialogTrigger
@@ -672,113 +741,221 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
         ) : null}
         <DialogPopup className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Create pairing link</DialogTitle>
+            <DialogTitle>
+              {createdPairing ? "Pairing link ready" : "Create pairing link"}
+            </DialogTitle>
             <DialogDescription>
-              Generate a one-time link that another device can use to pair with this backend as an
-              authorized client.
+              {createdPairing
+                ? "Share this one-use link privately. The device will appear under Authorized clients after pairing."
+                : "Choose how the other device reaches this host and what it can do. All connection types use the same client authorization."}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-foreground">
-                Client label (optional)
-              </span>
-              <Input
-                value={pairingLabel}
-                onChange={(event) => setPairingLabel(event.target.value)}
-                placeholder="e.g. Living room iPad"
-                disabled={isCreatingPairingLink}
-                autoFocus
-              />
-            </label>
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xs font-medium text-foreground">Permissions</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Limit what the paired client can do.
-                  </p>
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={isCreatingPairingLink}
-                    onClick={() =>
-                      setPairingScopes(
-                        [
-                          AuthOrchestrationReadScope,
-                          AuthFilesystemReadScope,
-                          AuthDiagnosticsReadScope,
-                          AuthTerminalReadScope,
-                        ].filter((scope) => delegatableScopes.includes(scope)),
-                      )
-                    }
-                  >
-                    Read only
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={isCreatingPairingLink}
-                    onClick={() =>
-                      setPairingScopes(
-                        AuthStandardClientScopes.filter((scope) =>
-                          delegatableScopes.includes(scope),
-                        ),
-                      )
-                    }
-                  >
-                    Standard
-                  </Button>
-                </div>
-              </div>
-              <div className="divide-y divide-border/60 rounded-lg border border-input bg-muted/25">
-                {PAIRING_SCOPE_OPTIONS.filter(({ scope }) => delegatableScopes.includes(scope)).map(
-                  ({ scope, title, description }) => (
-                    <label
-                      key={scope}
-                      className="flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40"
-                    >
-                      <Checkbox
-                        className="mt-0.5"
-                        checked={pairingScopes.includes(scope)}
-                        disabled={isCreatingPairingLink}
-                        onCheckedChange={(checked) => togglePairingScope(scope, checked === true)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium text-foreground">{title}</span>
-                        <span className="block text-xs leading-snug text-muted-foreground">
-                          {description}
-                        </span>
-                      </span>
-                    </label>
-                  ),
-                )}
-              </div>
-              {selectedScopes.length === 0 ? (
-                <p className="text-xs text-destructive">Select at least one permission.</p>
-              ) : selectedScopes.includes(AuthAccessWriteScope) ? (
-                <p className="text-xs text-warning">
-                  This client can create or revoke access for other devices.
+            {createdPairing ? (
+              <div className="space-y-3">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium">
+                    {createdPairing.url ? "Pairing link" : "Pairing code"}
+                  </span>
+                  <Textarea
+                    aria-label={createdPairing.url ? "Pairing link" : "Pairing code"}
+                    readOnly
+                    value={createdPairing.url ?? createdPairing.credential.credential}
+                    rows={4}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {createdPairing.url
+                    ? connectionType === "relay"
+                      ? "Paste the complete link into Add environment → Remote link in a forked client, or open it in your relay's hosted web app."
+                      : "Open this link on the other device. Its address must be reachable from that device."
+                    : "No shareable network address is available. Enter this code with the host's reachable address on the other device."}
                 </p>
-              ) : null}
-            </section>
+                {createdPairing.url && isLoopbackHostname(new URL(createdPairing.url).hostname) ? (
+                  <p className="text-xs text-warning">
+                    This link uses a loopback address and works only on this machine.{" "}
+                    {connectionType === "relay"
+                      ? "Use your relay's public HTTPS domain to connect from other devices."
+                      : "Use a host address reachable from the other device instead."}
+                  </p>
+                ) : createdPairing.url ? (
+                  <div className="flex justify-center">
+                    <QRCodeSvg
+                      value={createdPairing.url}
+                      size={160}
+                      level="M"
+                      marginSize={2}
+                      title="Pairing link. Scan to open on another device"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                {relay.data?.hasRegistrationToken || connectionType === "relay" ? (
+                  <div className="space-y-1.5">
+                    <span id="pairing-connection-type" className="text-xs font-medium">
+                      Connection type
+                    </span>
+                    <Select
+                      value={connectionType}
+                      onValueChange={(value) => {
+                        if (value === "direct" || value === "relay") setConnectionType(value);
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-labelledby="pairing-connection-type"
+                        disabled={isCreatingPairingLink}
+                      >
+                        <SelectValue>
+                          {connectionType === "relay"
+                            ? "Self-hosted relay"
+                            : "Direct / existing address"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="direct">Direct / existing address</SelectItem>
+                        <SelectItem value="relay">Self-hosted relay</SelectItem>
+                      </SelectPopup>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {connectionType === "relay"
+                        ? `Via ${relay.data?.relayUrl ?? "your relay"}. No direct access to this host is needed.`
+                        : "Use an existing host address, such as LAN, Tailscale or a configured public endpoint."}
+                    </p>
+                    {relayUnavailable ? (
+                      <p role="status" className="text-xs text-warning">
+                        {relay.error ??
+                          "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct."}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-foreground">
+                    Client label (optional)
+                  </span>
+                  <Input
+                    value={pairingLabel}
+                    onChange={(event) => setPairingLabel(event.target.value)}
+                    placeholder="e.g. Living room iPad"
+                    disabled={isCreatingPairingLink}
+                    autoFocus
+                  />
+                </label>
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-medium text-foreground">Permissions</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Limit what the paired client can do.
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={isCreatingPairingLink}
+                        onClick={() =>
+                          setPairingScopes(
+                            [
+                              AuthOrchestrationReadScope,
+                              AuthFilesystemReadScope,
+                              AuthDiagnosticsReadScope,
+                              AuthTerminalReadScope,
+                            ].filter((scope) => delegatableScopes.includes(scope)),
+                          )
+                        }
+                      >
+                        Read only
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={isCreatingPairingLink}
+                        onClick={() =>
+                          setPairingScopes(
+                            AuthStandardClientScopes.filter((scope) =>
+                              delegatableScopes.includes(scope),
+                            ),
+                          )
+                        }
+                      >
+                        Standard
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-border/60 rounded-lg border border-input bg-muted/25">
+                    {PAIRING_SCOPE_OPTIONS.filter(({ scope }) =>
+                      delegatableScopes.includes(scope),
+                    ).map(({ scope, title, description }) => (
+                      <label
+                        key={scope}
+                        className="flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40"
+                      >
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={pairingScopes.includes(scope)}
+                          disabled={isCreatingPairingLink}
+                          onCheckedChange={(checked) => togglePairingScope(scope, checked === true)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium text-foreground">{title}</span>
+                          <span className="block text-xs leading-snug text-muted-foreground">
+                            {description}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedScopes.length === 0 ? (
+                    <p className="text-xs text-destructive">Select at least one permission.</p>
+                  ) : selectedScopes.includes(AuthAccessWriteScope) ? (
+                    <p className="text-xs text-warning">
+                      This client can create or revoke access for other devices.
+                    </p>
+                  ) : null}
+                </section>
+              </>
+            )}
           </DialogPanel>
           <DialogFooter variant="bare">
-            <Button
-              variant="outline"
-              disabled={isCreatingPairingLink}
-              onClick={() => setDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={isCreatingPairingLink || selectedScopes.length === 0}
-              onClick={() => void handleCreatePairingLink()}
-            >
-              {isCreatingPairingLink ? "Creating…" : "Create link"}
-            </Button>
+            {createdPairing ? (
+              <>
+                <Button variant="outline" onClick={() => handleDialogOpenChange(false)}>
+                  Done
+                </Button>
+                <Button
+                  onClick={() =>
+                    copyToClipboard(
+                      createdPairing.url ?? createdPairing.credential.credential,
+                      undefined,
+                    )
+                  }
+                >
+                  {isCopied ? "Copied" : createdPairing.url ? "Copy link" : "Copy code"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={isCreatingPairingLink}
+                  onClick={() => handleDialogOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={
+                    isCreatingPairingLink || selectedScopes.length === 0 || relayUnavailable
+                  }
+                  onClick={() => void handleCreatePairingLink()}
+                >
+                  {isCreatingPairingLink ? "Creating…" : "Create link"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogPopup>
       </Dialog>
@@ -794,6 +971,7 @@ type PairingClientsListProps = {
   pairingLinks: ReadonlyArray<ServerPairingLinkRecord>;
   createdPairingCredentials: ReadonlyMap<string, string>;
   sharedPairingLinkId: string | null;
+  createdPairingUrls: ReadonlyMap<string, string>;
   clientSessions: ReadonlyArray<ServerClientSessionRecord>;
   revokingPairingLinkId: string | null;
   revokingClientSessionId: string | null;
@@ -810,6 +988,7 @@ export const PairingClientsList = memo(function PairingClientsList({
   pairingLinks,
   createdPairingCredentials,
   sharedPairingLinkId,
+  createdPairingUrls,
   clientSessions,
   revokingPairingLinkId,
   revokingClientSessionId,
@@ -825,6 +1004,7 @@ export const PairingClientsList = memo(function PairingClientsList({
           pairingLink={pairingLink}
           credential={createdPairingCredentials.get(pairingLink.id)}
           defaultShareOpen={pairingLink.id === sharedPairingLinkId}
+          pairingUrl={createdPairingUrls.get(pairingLink.id)}
           endpointUrl={endpointUrl}
           endpoints={endpoints}
           defaultEndpointKey={defaultEndpointKey}

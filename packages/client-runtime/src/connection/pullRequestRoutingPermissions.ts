@@ -50,6 +50,10 @@ function routeConnectionKey(
     const { alias, hostname, username, port } = profile.target;
     return JSON.stringify([target._tag, target.environmentId, alias, hostname, username, port]);
   }
+  if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) {
+    const { relayUrl, route, peerId } = profile.selfHostedRelay;
+    return JSON.stringify(["SelfHostedRelay", target.environmentId, relayUrl, route, peerId]);
+  }
   const baseUrls =
     target._tag === "PrimaryConnectionTarget"
       ? [target.httpBaseUrl, target.wsBaseUrl]

@@ -1,3 +1,4 @@
+import { SelfHostedRelaySettings } from "./SelfHostedRelaySettings";
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
@@ -227,7 +228,12 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     ReadonlyMap<string, string>
   >(() => new Map());
   const [newestPairingLinkId, setNewestPairingLinkId] = useState<string | null>(null);
-  const handlePairingLinkCreated = (created: AuthPairingCredentialResult) => {
+  const [createdPairingUrls, setCreatedPairingUrls] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const handlePairingLinkCreated = (created: AuthPairingCredentialResult, pairingUrl?: string) => {
+    if (pairingUrl)
+      setCreatedPairingUrls((current) => new Map(current).set(created.id, pairingUrl));
     setCreatedPairingCredentials((current) => new Map(current).set(created.id, created.credential));
     setNewestPairingLinkId(created.id);
   };
@@ -944,6 +950,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       isLoading={isLoadingDesktopAccessManagement}
       pairingLinks={pairingLinks}
       createdPairingCredentials={createdPairingCredentials}
+      createdPairingUrls={createdPairingUrls}
       sharedPairingLinkId={newestPairingLinkId}
       clientSessions={clientSessions}
       revokingPairingLinkId={revokingDesktopPairingLinkId}
@@ -1144,6 +1151,11 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                 ) : null}
               </>
             ) : null}
+            <SelfHostedRelaySettings
+              key={primaryEnvironmentId}
+              environmentId={primaryEnvironmentId}
+              environmentLabel={primaryEnvironment?.label ?? "This machine"}
+            />
             {primaryEnvironment ? (
               <details className="group px-3 sm:px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -1177,6 +1189,9 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
               control={
                 canWriteAccess ? (
                   <AuthorizedClientsHeaderAction
+                    endpointUrl={desktopServerExposureState?.endpointUrl}
+                    endpoints={visibleDesktopAdvertisedEndpoints}
+                    defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
                     delegatableScopes={currentSessionScopes ?? []}
                     onPairingLinkCreated={handlePairingLinkCreated}
                     clientSessions={

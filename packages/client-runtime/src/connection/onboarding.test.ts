@@ -235,6 +235,43 @@ const registerSwitchedOffEnvironment = Effect.gen(function* () {
 });
 
 describe("connection onboarding", () => {
+  it.effect("pairs through the relay resource prefix while persisting a stable pinned host", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const route = "1234567890abcdef1234567890abcdef";
+      const peerId = "12D3KooWTestHostIdentityForRelay";
+      const base = `https://app.example.test/__t3_relay/${route}/`;
+      const gateway = ClientCapabilities.SelfHostedRelayGateway.of({
+        disconnect: () => Effect.void,
+        prepare: () =>
+          Effect.sync(() => {
+            expect(calls).toEqual([]);
+            return { httpBaseUrl: base, wsBaseUrl: base.replace(/^https:/, "wss:") };
+          }),
+      });
+      const registration = yield* preparePairingRegistration({
+        pairingUrl: `https://relay.example.test/pair#relay=1&route=${route}&peer=${peerId}&token=original-pairing-code`,
+      }).pipe(
+        Effect.provide(layerPairingOnboarding(undefined, calls)),
+        Effect.provideService(ClientCapabilities.SelfHostedRelayGateway, gateway),
+      );
+      expect(calls.map((call) => call.url)).toEqual([
+        `${base}.well-known/t3/environment`,
+        `${base}oauth/token`,
+      ]);
+      expect(registration.profile).toMatchObject({
+        httpBaseUrl: `https://${route}.t3-relay.invalid`,
+        selfHostedRelay: { relayUrl: "https://relay.example.test", route, peerId },
+      });
+      const body = calls[1]!.init.body;
+      const params = new URLSearchParams(
+        body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body),
+      );
+      expect(params.get("subject_token")).toBe("original-pairing-code");
+      expect(registration.credential.token).toBe("bearer-token");
+    }),
+  );
+
   it.effect("prepares a persisted bearer registration from pairing details", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
