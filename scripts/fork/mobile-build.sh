@@ -8,8 +8,11 @@ helper="$root/scripts/fork/mobile-native.py"
 platform="${1:-}"
 [[ "$platform" == ios || "$platform" == android ]] || fail 'Usage: mobile-build.sh ios|android'
 [[ "${GITHUB_ACTIONS:-}" == true ]] || fail 'Run this script in the disposable fork-mobile workflow, not a live checkout.'
-[[ "${MOBILE_BUILD_NUMBER:-}" =~ ^[1-9][0-9]{0,9}$ ]] || fail 'MOBILE_BUILD_NUMBER must be a positive integer without leading zeros.'
-(( MOBILE_BUILD_NUMBER <= 2100000000 )) || fail 'MOBILE_BUILD_NUMBER exceeds Android versionCode maximum 2100000000.'
+if [[ "$platform" == ios ]]; then
+  export MOBILE_BUILD_NUMBER="${FORK_IOS_BUILD_NUMBER:-${MOBILE_BUILD_NUMBER:-}}"
+fi
+python3 "$helper" versions "${MOBILE_BUILD_NUMBER:-}" "$platform" "${T3CODE_MOBILE_VERSION:-}"
+[[ -n "${T3CODE_MOBILE_VERSION:-}" ]] || unset T3CODE_MOBILE_VERSION
 [[ -z "$(git -C "$root" ls-files "apps/mobile/$platform")" ]] || fail 'Refusing to overwrite tracked native files.'
 
 export APP_VARIANT=production T3CODE_MOBILE_UPDATES_ENABLED=0 MOBILE_VERSION_POLICY=appVersion
@@ -60,7 +63,7 @@ vp exec expo prebuild --clean --platform "$platform" --no-install \
   --template "$mobile/node_modules/expo/template.tgz" --skip-dependency-update react,react-native
 
 if [[ "$platform" == ios ]]; then
-  python3 "$helper" prepare-ios "$mobile/ios" "$MOBILE_BUILD_NUMBER"
+  python3 "$helper" prepare-ios "$mobile/ios" "$MOBILE_BUILD_NUMBER" "${T3CODE_MOBILE_VERSION:-}"
   (cd ios && pod install)
   printf 'export NODE_BINARY=%q\n' "$(command -v node)" > ios/.xcode.env.local
   xcodebuild \
@@ -76,7 +79,7 @@ if [[ "$platform" == ios ]]; then
   ditto "$app" "$work/Payload/T3Code.app"
   artifact="$out/t3-code-ios-unsigned-$MOBILE_BUILD_NUMBER.ipa"
   (cd "$work" && ditto -c -k --keepParent Payload "$artifact")
-  python3 "$helper" ipa "$artifact" "$MOBILE_BUILD_NUMBER"
+  python3 "$helper" ipa "$artifact" "$MOBILE_BUILD_NUMBER" "${T3CODE_MOBILE_VERSION:-}"
   signing='Unsigned iOS device IPA. Re-sign before installation, including embedded extensions/frameworks. No Apple certificate or provisioning profile was used.'
 else
   python3 "$helper" prepare-android "$mobile/android" "$MOBILE_BUILD_NUMBER"
@@ -120,11 +123,14 @@ PY
   "$ANDROID_HOME/build-tools/$build_tools/zipalign" -c -P 16 -v 4 "$artifact"
   "$ANDROID_HOME/build-tools/$build_tools/aapt" dump badging "$artifact" > "$work/badging.txt"
   grep -F "package: name='com.t3tools.t3code' versionCode='$MOBILE_BUILD_NUMBER'" "$work/badging.txt" >/dev/null || fail 'APK package ID or build number changed.'
+  if [[ -n "${T3CODE_MOBILE_VERSION:-}" ]]; then
+    grep -F "versionName='$T3CODE_MOBILE_VERSION'" "$work/badging.txt" >/dev/null || fail 'APK app version changed.'
+  fi
   grep -F "application-label:'T3 Code'" "$work/badging.txt" >/dev/null || fail 'APK application name changed.'
   if grep -q '^application-debuggable' "$work/badging.txt"; then fail 'APK must be a non-debuggable Release build.'; fi
 fi
 
-python3 - "$artifact" "$platform" "$signing" <<'PY'
+python3 - "$artifact" "$platform" "$signing" "$work/config.json" <<'PY'
 import hashlib, json, os, subprocess, sys
 from pathlib import Path
 artifact = Path(sys.argv[1])
@@ -141,6 +147,7 @@ provenance = {
     'updatesEnabled': False,
     'runtimeVersionPolicy': 'appVersion',
     'buildNumber': os.environ['MOBILE_BUILD_NUMBER'],
+    'appVersion': json.loads(Path(sys.argv[4]).read_text())['version'],
     'repository': os.environ['GITHUB_REPOSITORY'],
     'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
     'workflowRef': os.environ['GITHUB_WORKFLOW_REF'],
