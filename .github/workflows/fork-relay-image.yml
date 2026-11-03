@@ -1,0 +1,158 @@
+name: Fork Relay Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image version (blank uses the commit SHA)
+        type: string
+        default: ""
+      publish:
+        description: Also publish web/core tags to this fork's GHCR
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-relay-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository != 'pingdotgg/t3code' && github.ref == 'refs/heads/codex/build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [core, web]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve image name
+        id: image
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-sha-${GITHUB_SHA:0:12}}"
+          [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,90}$ ]] || { echo 'Invalid Docker tag'; exit 1; }
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/selfhosted-relay"
+          echo "name=$image:$tag-${{ matrix.variant }}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup web dependencies
+        if: matrix.variant == 'web'
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/web... --filter=@t3tools/scripts...
+
+      - name: Build hosted web without source maps
+        if: matrix.variant == 'web'
+        env:
+          T3CODE_WEB_SOURCEMAP: "0"
+          T3CODE_TELEMETRY_CHANNEL: dev
+        run: |
+          vp run --filter @t3tools/web build
+          test -f apps/web/dist/index.html
+          test -f apps/web/dist/relay-worker.js
+          test -z "$(find apps/web/dist -name '*.map' -print -quit)"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build Linux amd64 image archive
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: infra/selfhosted-relay/Dockerfile
+          target: ${{ matrix.variant }}
+          platforms: linux/amd64
+          tags: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=docker,dest=${{ runner.temp }}/relay.tar
+          cache-from: type=gha,scope=fork-relay-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=fork-relay-${{ matrix.variant }}
+
+      - name: Smoke-test exported image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          docker load -i "$RUNNER_TEMP/relay.tar"
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          container=$(docker run -d --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 128m --pids-limit 128 -p 127.0.0.1::8788 \
+            -e T3_RELAY_REGISTRATION_TOKEN="$token" "$IMAGE")
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          port=$(docker inspect "$container" --format '{{(index (index .NetworkSettings.Ports "8788/tcp") 0).HostPort}}')
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$port/healthz"
+          if [[ "$VARIANT" == web ]]; then
+            curl --fail "http://127.0.0.1:$port/" -o /dev/null
+            curl --fail "http://127.0.0.1:$port/relay-worker.js" -o /dev/null
+          fi
+
+      - name: Compress image and record provenance
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          mkdir -p output
+          gzip -1c "$RUNNER_TEMP/relay.tar" > "output/t3-selfhosted-relay-linux-amd64-$VARIANT.tar.gz"
+          printf 'commit=%s\nimage=%s\nplatform=linux/amd64\n' "$GITHUB_SHA" "$IMAGE" > "output/relay-$VARIANT-build.txt"
+          (cd output && sha256sum *.tar.gz > "relay-$VARIANT-SHA256SUMS")
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-linux-amd64-${{ matrix.variant }}
+          path: output/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: inputs.publish && github.repository != 'pingdotgg/t3code' && github.ref == 'refs/heads/codex/build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: relay-linux-amd64-*
+          path: images
+          merge-multiple: true
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publish verified images
+        run: |
+          set -euo pipefail
+          cd images
+          for variant in core web; do
+            sha256sum -c "relay-$variant-SHA256SUMS"
+            gzip -dc "t3-selfhosted-relay-linux-amd64-$variant.tar.gz" | docker load
+            image=$(sed -n 's/^image=//p' "relay-$variant-build.txt")
+            docker push "$image"
+            rolling="${image%:*}:$variant"
+            docker tag "$image" "$rolling"
+            docker push "$rolling"
+            echo "Published \`$image\` and \`$rolling\`" >> "$GITHUB_STEP_SUMMARY"
+          done
