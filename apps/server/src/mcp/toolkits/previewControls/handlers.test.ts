@@ -57,6 +57,7 @@ it.effect.each([
             Layer.provide(NodeServices.layer),
           ),
           NodeCrypto.layer,
+          NodeHttpServer.layerTest,
         ),
       ),
     );
