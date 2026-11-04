@@ -130,12 +130,14 @@ jobs:
               }
             });
             await page.goto(origin.href);
-            await page.getByRole('heading', { name: 'Connect your computers', exact: true }).waitFor();
+            await page.getByText('No computer connected', { exact: true }).waitFor();
+            await page.getByRole('link', { name: 'Add pairing link', exact: true }).waitFor();
             assert.deepEqual(hostApiRequests, [], 'The relay web client must not bootstrap a local T3 host');
             await page.reload();
-            await page.getByRole('heading', { name: 'Connect your computers', exact: true }).waitFor();
+            await page.getByText('No computer connected', { exact: true }).waitFor();
+            await page.getByRole('link', { name: 'Add pairing link', exact: true }).waitFor();
             assert.deepEqual(hostApiRequests, [], 'Reload must stay in hosted-client mode');
-            console.log('Relay web onboarding and reload passed without host API requests');
+            console.log('Relay web landing page and reload passed without host API requests');
           } finally {
             await browser.close();
           }
