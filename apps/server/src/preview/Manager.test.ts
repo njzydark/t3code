@@ -1,13 +1,16 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { type PreviewEvent, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import { HttpServer } from "effect/http";
 import { expect } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { loopbackUrlHostForAddress } from "../startupAccess.ts";
 import * as PreviewManager from "./Manager.ts";
 
 const DRAIN_LIMIT = 100;
@@ -31,6 +34,7 @@ const collectEvents = Effect.gen(function* () {
 }).pipe(Effect.withSpan("preview.test.collectEvents"));
 
 const layer = PreviewManager.layer.pipe(
+  Layer.provideMerge(NodeHttpServer.layerTest),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-manager-" })),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(NodeServices.layer),
@@ -56,6 +60,21 @@ it.layer(layer)("PreviewManager", (it) => {
       if (events[0]?.type === "opened") {
         expect(events[0].tabId).toBe(snapshot.tabId);
       }
+
+      const server = yield* HttpServer.HttpServer;
+      if (!("port" in server.address)) throw new Error("Expected a TCP server");
+      for (const file of ["guide.pdf", "index.html"]) {
+        const path = `/api/assets/signed-token/${file}?revision=2#page=3`;
+        const opened = yield* manager.open({ threadId, runtime: "server", url: path });
+        expect(opened.navStatus).toMatchObject({
+          _tag: "Loading",
+          url: `http://${loopbackUrlHostForAddress(server.address)}:${server.address.port}${path}`,
+        });
+      }
+      const invalidAsset = yield* manager
+        .open({ threadId, runtime: "server", url: "/api/assets/../outside" })
+        .pipe(Effect.flip);
+      expect(invalidAsset._tag).toBe("PreviewInvalidUrlError");
     }),
   );
 

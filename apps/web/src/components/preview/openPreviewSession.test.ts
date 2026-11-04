@@ -100,6 +100,32 @@ describe("openPreviewSession", () => {
 });
 
 describe("openUrlInPreview from a link", () => {
+  it.each(["server", undefined] as const)(
+    "addresses relay assets for the %s browser runtime",
+    async (runtime) => {
+      vi.spyOn(previewRuntime, "isPreviewAvailableFor").mockReturnValue(true);
+      vi.spyOn(previewRuntime, "previewRuntimeFor").mockReturnValue(runtime);
+      const relativeUrl = "/api/assets/signed-token/guide.pdf?revision=2#page=3";
+      const base = "https://relay.test/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/";
+      const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+      await openFileInPreview({
+        threadRef,
+        filePath: "/repo/guide.pdf",
+        workspaceRoot: "/repo",
+        httpBaseUrl: base,
+        createAssetUrl: async () => AsyncResult.success({ relativeUrl, expiresAt: 0 }),
+        openPreview,
+      });
+      expect(openPreview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            url: runtime === "server" ? relativeUrl : `${base}${relativeUrl.slice(1)}`,
+          }),
+        }),
+      );
+    },
+  );
+
   it.each(["link", "file"] as const)(
     "opens a side chat's %s in the parent's browser panel after the pane unmounts",
     async (entryPoint) => {

@@ -56,11 +56,16 @@ async function relayFetch(event, route, path) {
           clearTimeout(deadline);
           const headers = new Headers(data.headers);
           headers.set("X-Content-Type-Options", "nosniff");
-          // Remote documents must never inherit the app's credentials or storage.
-          headers.append(
-            "Content-Security-Policy",
-            "sandbox allow-scripts allow-forms allow-popups allow-downloads",
-          );
+          const nativePdf =
+            path.startsWith("/api/assets/") &&
+            headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() ===
+              "application/pdf";
+          // PDF plugins require an unsandboxed response; active documents still need isolation.
+          if (!nativePdf)
+            headers.append(
+              "Content-Security-Policy",
+              "sandbox allow-scripts allow-forms allow-popups allow-downloads",
+            );
           const body =
             event.request.method === "HEAD" || [204, 205, 304].includes(data.status)
               ? null

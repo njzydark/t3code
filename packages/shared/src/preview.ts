@@ -11,10 +11,15 @@ export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): 
   try {
     const url = new URL(rawUrl);
     const baseUrl = new URL(httpBaseUrl);
+    const relayPrefix = /^\/__t3_relay\/[a-f0-9]{32}(?=\/|$)/.exec(baseUrl.pathname)?.[0] ?? "";
+    const pathname =
+      relayPrefix && url.origin === baseUrl.origin && url.pathname.startsWith(`${relayPrefix}/`)
+        ? url.pathname.slice(relayPrefix.length)
+        : url.pathname;
     if (
       (url.protocol !== "http:" && url.protocol !== "https:") ||
-      !url.pathname.startsWith("/api/assets/") ||
-      !/\.pdf$/i.test(url.pathname)
+      !pathname.startsWith("/api/assets/") ||
+      !/\.pdf$/i.test(pathname)
     ) {
       return null;
     }
@@ -27,7 +32,7 @@ export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): 
     }
     // The browser may run on the host's loopback address. Fetch signed bytes
     // through this client's environment connection, including remote routes.
-    return new URL(`${url.pathname}${url.search}${url.hash}`, baseUrl).href;
+    return new URL(`${relayPrefix}${pathname}${url.search}${url.hash}`, baseUrl).href;
   } catch {
     return null;
   }

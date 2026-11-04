@@ -4,6 +4,7 @@ import * as NodeVM from "node:vm";
 import * as NodeFSP from "node:fs/promises";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it } from "@effect/vitest";
@@ -506,6 +507,7 @@ const dependencies = Layer.mergeAll(
   }),
   PreviewAgentActivity.layer,
 ).pipe(
+  Layer.provideMerge(NodeHttpServer.layerTest),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-server-browser-" })),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );

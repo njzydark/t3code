@@ -13,13 +13,17 @@ describe("previewPdfAssetUrl", () => {
     "http://localhost:6497",
     "https://host.tailnet.test",
     "https://environment.tunnel.test",
+    "https://relay.test/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+    "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.t3-relay.invalid/",
   ])("loads PDF bytes through the client's connection at %s", (base) => {
     expect(
       previewPdfAssetUrl(
         "http://127.0.0.1:14537/api/assets/signed-token/Study%20guide.PDF?revision=2#page=8",
         base,
       ),
-    ).toBe(`${base}/api/assets/signed-token/Study%20guide.PDF?revision=2#page=8`);
+    ).toBe(
+      `${base.replace(/\/$/, "")}/api/assets/signed-token/Study%20guide.PDF?revision=2#page=8`,
+    );
   });
 
   it.each([
@@ -42,6 +46,21 @@ describe("previewPdfAssetUrl", () => {
   it("keeps URLs from the connected environment", () => {
     const source = "https://environment.test/api/assets/token/guide.pdf#page=2";
     expect(previewPdfAssetUrl(source, "https://environment.test")).toBe(source);
+    expect(previewPdfAssetUrl(source, source)).toBe(source);
+    const relaySource =
+      "https://relay.test/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/api/assets/token/guide.pdf#page=2";
+    expect(
+      previewPdfAssetUrl(
+        relaySource,
+        "https://relay.test/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+      ),
+    ).toBe(relaySource);
+    expect(
+      previewPdfAssetUrl(
+        relaySource.replace("/aaaaaaaa", "/bbbbbbbb"),
+        "https://relay.test/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+      ),
+    ).toBeNull();
   });
 
   it.each(["127.0.0.2", "localhost.", "[::1]"])(

@@ -27,7 +27,10 @@ import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import { HttpServer } from "effect/http";
 import { PreviewControlRequiredError } from "@t3tools/contracts";
+
+import { loopbackUrlHostForAddress } from "../startupAccess.ts";
 
 export class PreviewManager extends Context.Service<
   PreviewManager,
@@ -98,9 +101,19 @@ const sessionsForThread = (
   return out;
 };
 
-const normalizeUrl = (rawUrl: string): Effect.Effect<string, PreviewInvalidUrlError> =>
+const normalizeUrl = (
+  rawUrl: string,
+  assetOrigin?: string,
+): Effect.Effect<string, PreviewInvalidUrlError> =>
   Effect.try({
-    try: () => normalizePreviewUrl(rawUrl),
+    try: () => {
+      if (assetOrigin && rawUrl.startsWith("/api/assets/")) {
+        const url = new URL(rawUrl, assetOrigin);
+        if (!url.pathname.startsWith("/api/assets/")) throw new Error("Invalid asset path");
+        return url.href;
+      }
+      return normalizePreviewUrl(rawUrl);
+    },
     catch: (cause) => {
       if (isPreviewUrlNormalizationError(cause)) {
         return new PreviewInvalidUrlError({
@@ -124,6 +137,9 @@ const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 /** @public */
 export const make = Effect.gen(function* PreviewManagerMake() {
   const random = yield* SecureRandom.SecureRandom;
+  const { address } = yield* HttpServer.HttpServer;
+  const assetOrigin =
+    "port" in address ? `http://${loopbackUrlHostForAddress(address)}:${address.port}` : undefined;
   const serverEpoch = yield* random.uuidV4();
   const stateRef = yield* SynchronizedRef.make<ManagerState>(initialState);
   const eventsPubSub = yield* PubSub.unbounded<PreviewEvent>();
@@ -186,7 +202,11 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         threadId: input.threadId,
         tabId,
         navStatus: input.url
-          ? { _tag: "Loading", url: yield* normalizeUrl(input.url), title: "" }
+          ? {
+              _tag: "Loading",
+              url: yield* normalizeUrl(input.url, runtime === "server" ? assetOrigin : undefined),
+              title: "",
+            }
           : { _tag: "Idle" },
         canGoBack: false,
         canGoForward: false,

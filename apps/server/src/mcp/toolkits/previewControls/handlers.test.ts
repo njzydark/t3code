@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -53,11 +54,12 @@ it.effect.each([
       };
       const manager = yield* Preview.make.pipe(
         Effect.provide(
-          Layer.merge(
+          Layer.mergeAll(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
               Layer.provide(NodeServices.layer),
             ),
             NodeCrypto.layer,
+            NodeHttpServer.layerTest,
           ),
         ),
       );
