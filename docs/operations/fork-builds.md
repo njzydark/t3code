@@ -34,6 +34,11 @@ them into `codex/build` for personal testing. Fixes to an integrated feature go
 back on its feature branch and are merged again. Use merge commits on the
 published integration branch rather than rewriting its history.
 
+If you deliberately rebase the feature and build branches instead, use explicit
+force-with-lease checks when pushing rewritten branches. Never move published
+release tags: release planning accepts rebased fork commits on a non-regressing
+upstream baseline and omits patch-equivalent commits already in the last release.
+
 ## Run Builds
 
 Run **Fork Release** manually from `codex/build` to select components and create
