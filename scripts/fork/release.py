@@ -85,9 +85,10 @@ def make_plan():
     source = git("rev-parse", "HEAD")
     require(source == os.environ["GITHUB_SHA"], "Release source differs from the workflow SHA")
     previous = plan["previous_tag"]
-    if previous:
-        subprocess.run(["git", "merge-base", "--is-ancestor", previous, source], check=True)
     baseline = git("merge-base", "refs/remotes/origin/main", source)
+    if previous:
+        previous_baseline = git("merge-base", "refs/remotes/origin/main", previous)
+        subprocess.run(["git", "merge-base", "--is-ancestor", previous_baseline, baseline], check=True)
     repository = os.environ["GITHUB_REPOSITORY"]
     server = os.environ["GITHUB_SERVER_URL"]
     image = f"ghcr.io/{repository.lower()}/selfhosted-relay:{plan['version']}"
@@ -99,9 +100,12 @@ def make_plan():
         "relay_images": [f"{image}-core", f"{image}-web"] if plan["relay"] else [],
         "relay_published": plan["relay"] and os.environ["RELEASE_PUBLISH_RELAY"] == "true",
     })
-    log_args = ["log", "--no-merges", "--format=- %h %s", source, "--not", baseline]
+    log_args = ["log", "--no-merges", "--format=- %h %s"]
     if previous:
-        log_args.append(previous)
+        log_args.extend(["--cherry-pick", "--right-only", f"{previous}...{source}"])
+    else:
+        log_args.append(source)
+    log_args.extend(["--not", baseline])
     changes = git(*log_args) or "- No additional fork commits."
     notes = os.environ.get("RELEASE_NOTES", "").strip()
     builds = []

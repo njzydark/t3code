@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import subprocess
 import unittest
@@ -38,9 +39,14 @@ class ReleaseTests(unittest.TestCase):
             git("commit", "-m", "upstream baseline")
             baseline = git("rev-parse", "HEAD")
             git("update-ref", "refs/remotes/origin/main", baseline)
-            git("commit", "--allow-empty", "-m", "previous relay feature")
+            Path("relay.txt").write_text("relay enabled\n")
+            git("add", ".")
+            git("commit", "-m", "previous relay feature")
+            released = git("rev-parse", "HEAD")
             git("tag", "fork-20261103.1")
-            git("commit", "--allow-empty", "-m", "fix relay reconnect")
+            Path("relay.txt").write_text("relay enabled with reconnect\n")
+            git("add", ".")
+            git("commit", "-m", "fix relay reconnect")
             source = git("rev-parse", "HEAD")
             env = {
                 "GITHUB_SHA": source, "GITHUB_REPOSITORY": "njzydark/t3code",
@@ -50,18 +56,39 @@ class ReleaseTests(unittest.TestCase):
                 "RELEASE_TARGET": "web", "RELEASE_MOBILE": "none", "RELEASE_RELAY": "false",
                 "RELEASE_PUBLISH_RELAY": "false", "RELEASE_NOTES": "Reconnect no longer stalls.",
             }
+            for rebased in [False, True]:
+                with self.subTest(rebased=rebased):
+                    if rebased:
+                        git("switch", "--detach", baseline)
+                        Path("upstream.txt").write_text("upstream update\n")
+                        git("add", "upstream.txt")
+                        git("commit", "-m", "upstream update")
+                        baseline = git("rev-parse", "HEAD")
+                        git("update-ref", "refs/remotes/origin/main", baseline)
+                        git("cherry-pick", released, source)
+                        source = git("rev-parse", "HEAD")
+                        env["GITHUB_SHA"] = source
+                        shutil.rmtree("release-plan")
+                    with patch.dict(os.environ, env), patch.object(release, "datetime", FrozenDateTime):
+                        release.make_plan()
+                    plan = json.loads(Path("release-plan/fork-release.json").read_text())
+                    self.assertEqual(plan["commit"], source)
+                    self.assertEqual(plan["upstream_base"], baseline)
+                    self.assertEqual(plan["tag"], "fork-20261104.1")
+                    self.assertEqual(git("rev-parse", "fork-20261103.1"), released)
+                    notes = Path("release-plan/release-notes.md").read_text()
+                    self.assertIn("fix relay reconnect", notes)
+                    self.assertIn(env["RELEASE_NOTES"], notes)
+                    self.assertNotIn("previous relay feature", notes)
+                    self.assertNotIn("upstream baseline", notes)
+                    self.assertNotIn("upstream update", notes)
+                    self.assertIn("version=0.1.6-fork.20261104.1", Path("outputs").read_text())
+            git("tag", "fork-20261104.1", source)
+            git("switch", "--detach", released)
+            env["GITHUB_SHA"] = released
             with patch.dict(os.environ, env), patch.object(release, "datetime", FrozenDateTime):
-                release.make_plan()
-            plan = json.loads(Path("release-plan/fork-release.json").read_text())
-            self.assertEqual(plan["commit"], source)
-            self.assertEqual(plan["upstream_base"], baseline)
-            self.assertEqual(plan["tag"], "fork-20261104.1")
-            notes = Path("release-plan/release-notes.md").read_text()
-            self.assertIn("fix relay reconnect", notes)
-            self.assertIn(env["RELEASE_NOTES"], notes)
-            self.assertNotIn("previous relay feature", notes)
-            self.assertNotIn("upstream baseline", notes)
-            self.assertIn("version=0.1.6-fork.20261104.1", Path("outputs").read_text())
+                with self.assertRaises(subprocess.CalledProcessError):
+                    release.make_plan()
 
     def test_date_versions_increment_across_days_months_and_upstream_versions(self):
         tags = ["v0.1.6", "fork-20261102.9", "fork-20261103.1", "fork-20261103.2"]
