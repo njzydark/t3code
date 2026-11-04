@@ -23,6 +23,7 @@ work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/fork-mobile.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 out="$root/artifacts/fork-mobile/$platform"
 mkdir -p "$out"
+command -v ccache >/dev/null || fail 'The fork-mobile workflow must install ccache before building.'
 cd "$mobile"
 
 if [[ "$platform" == ios ]]; then
@@ -63,17 +64,19 @@ vp exec expo prebuild --clean --platform "$platform" --no-install \
   --template "$mobile/node_modules/expo/template.tgz" --skip-dependency-update react,react-native
 
 if [[ "$platform" == ios ]]; then
+  export USE_CCACHE=1
+  derived="${RUNNER_TEMP:-$work}/fork-mobile-derived-data"
   python3 "$helper" prepare-ios "$mobile/ios" "$MOBILE_BUILD_NUMBER" "${T3CODE_MOBILE_VERSION:-}"
   (cd ios && pod install)
   printf 'export NODE_BINARY=%q\n' "$(command -v node)" > ios/.xcode.env.local
   xcodebuild \
     -workspace ios/T3Code.xcworkspace -scheme T3Code -configuration Release \
     -sdk iphoneos -destination 'generic/platform=iOS' \
-    -derivedDataPath "$work/DerivedData" \
+    -derivedDataPath "$derived" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
     DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
     CURRENT_PROJECT_VERSION="$MOBILE_BUILD_NUMBER" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO build
-  app="$work/DerivedData/Build/Products/Release-iphoneos/T3Code.app"
+  app="$derived/Build/Products/Release-iphoneos/T3Code.app"
   [[ -d "$app" ]] || fail 'Xcode did not produce the production device app.'
   mkdir -p "$work/Payload"
   ditto "$app" "$work/Payload/T3Code.app"
@@ -115,6 +118,7 @@ PY
   fi
   chmod 600 "$FORK_ANDROID_KEYSTORE"
   (cd android && ./gradlew :app:assembleRelease --no-daemon --max-workers=2 \
+    --build-cache --no-configuration-cache \
     -PreactNativeArchitectures=arm64-v8a,x86_64)
   artifact="$out/t3-code-android-$MOBILE_BUILD_NUMBER.apk"
   cp android/app/build/outputs/apk/release/app-release.apk "$artifact"
