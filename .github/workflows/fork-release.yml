@@ -6,7 +6,8 @@ on:
       target:
         description: Desktop / CLI / web assets to include
         type: choice
-        options: [all, desktop-macos-arm64, desktop-linux-x64, cli-linux-x64, web]
+        options:
+          [all, desktop-all, desktop-macos-arm64, desktop-linux-x64, cli-linux-x64, web, none]
         default: all
       mobile:
         description: Mobile assets to include
@@ -81,6 +82,7 @@ jobs:
 
   clients:
     needs: prepare
+    if: inputs.target != 'none'
     uses: ./.github/workflows/fork-build.yml
     with:
       target: ${{ inputs.target }}
@@ -120,7 +122,7 @@ jobs:
     if: >-
       !cancelled() &&
       needs.prepare.result == 'success' &&
-      needs.clients.result == 'success' &&
+      (needs.clients.result == 'success' || needs.clients.result == 'skipped') &&
       (needs.mobile.result == 'success' || needs.mobile.result == 'skipped') &&
       (needs.relay.result == 'success' || needs.relay.result == 'skipped')
     runs-on: ubuntu-24.04
