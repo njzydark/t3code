@@ -120,8 +120,9 @@ jobs:
           import { chromium } from 'playwright-core';
           const origin = new URL(process.env.RELAY_SMOKE_URL);
           const browser = await chromium.launch({ channel: 'chrome' });
+          const page = await browser.newPage();
           try {
-            const page = await browser.newPage();
+            page.on('pageerror', error => console.error('Browser error:', error.message));
             const hostApiRequests = [];
             page.on('request', request => {
               const url = new URL(request.url());
@@ -138,6 +139,9 @@ jobs:
             await page.getByRole('link', { name: 'Add pairing link', exact: true }).waitFor();
             assert.deepEqual(hostApiRequests, [], 'Reload must stay in hosted-client mode');
             console.log('Relay web landing page and reload passed without host API requests');
+          } catch (error) {
+            console.error('Rendered page:', await page.locator('body').innerText());
+            throw error;
           } finally {
             await browser.close();
           }
