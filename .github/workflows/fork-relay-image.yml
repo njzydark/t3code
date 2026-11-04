@@ -65,6 +65,7 @@ jobs:
         env:
           T3CODE_WEB_SOURCEMAP: "0"
           T3CODE_TELEMETRY_CHANNEL: dev
+          VITE_HOSTED_APP_CHANNEL: latest
           APP_VERSION: ${{ inputs.version }}
         run: |
           if [[ -n "$APP_VERSION" ]]; then
@@ -96,6 +97,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=fork-relay-${{ matrix.variant }}
 
       - name: Smoke-test exported image
+        working-directory: scripts
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           VARIANT: ${{ matrix.variant }}
@@ -113,6 +115,31 @@ jobs:
           if [[ "$VARIANT" == web ]]; then
             curl --fail "http://127.0.0.1:$port/" -o /dev/null
             curl --fail "http://127.0.0.1:$port/relay-worker.js" -o /dev/null
+            RELAY_SMOKE_URL="http://127.0.0.1:$port" node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { chromium } from 'playwright-core';
+          const origin = new URL(process.env.RELAY_SMOKE_URL);
+          const browser = await chromium.launch({ channel: 'chrome' });
+          try {
+            const page = await browser.newPage();
+            const hostApiRequests = [];
+            page.on('request', request => {
+              const url = new URL(request.url());
+              if (url.origin === origin.origin && url.pathname.startsWith('/api/')) {
+                hostApiRequests.push(url.pathname);
+              }
+            });
+            await page.goto(origin.href);
+            await page.getByRole('heading', { name: 'Connect your computers', exact: true }).waitFor();
+            assert.deepEqual(hostApiRequests, [], 'The relay web client must not bootstrap a local T3 host');
+            await page.reload();
+            await page.getByRole('heading', { name: 'Connect your computers', exact: true }).waitFor();
+            assert.deepEqual(hostApiRequests, [], 'Reload must stay in hosted-client mode');
+            console.log('Relay web onboarding and reload passed without host API requests');
+          } finally {
+            await browser.close();
+          }
+          NODE
           fi
 
       - name: Compress image and record provenance
