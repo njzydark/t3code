@@ -14,6 +14,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import { AsyncResult } from "effect/reactivity";
+import { relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
 
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
@@ -154,7 +155,14 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
   }
   return openUrlInPreview({
     threadRef: hostRef,
-    url: assetUrl,
+    // A host browser cannot use the client's page-owned encrypted relay transport.
+    url:
+      hostRef.environmentId === input.threadRef.environmentId &&
+      previewRuntimeFor(hostRef.environmentId) === "server" &&
+      relayRouteFromUrl(input.httpBaseUrl) !== null &&
+      assetResult.value.relativeUrl.startsWith("/api/assets/")
+        ? assetResult.value.relativeUrl
+        : assetUrl,
     openPreview: input.openPreview,
   });
 }
