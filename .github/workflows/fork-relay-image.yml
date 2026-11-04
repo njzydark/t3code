@@ -12,16 +12,6 @@ on:
       version:
         type: string
         default: ""
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Image version (blank uses the commit SHA)
-        type: string
-        default: ""
-      publish:
-        description: Also publish web/core tags to this fork's GHCR
-        type: boolean
-        default: false
 
 permissions:
   contents: read

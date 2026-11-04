@@ -37,6 +37,10 @@ it("validates versions and chooses only supported native targets", () => {
     ],
   );
   assert.isTrue(all.cli && all.web && all.bundle);
+  const desktop = buildPlan("desktop-all", "", "0.1.6");
+  assert.lengthOf(desktop.desktop, 2);
+  assert.isTrue(desktop.bundle);
+  assert.isFalse(desktop.cli || desktop.web);
   const linux = buildPlan("desktop-linux-x64", "2.0.0-fork", "0.1.6");
   assert.isTrue(linux.cli);
   assert.isFalse(linux.web);
