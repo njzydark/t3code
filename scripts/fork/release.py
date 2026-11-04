@@ -26,7 +26,7 @@ def release_plan(day, app_version, tags, target, mobile, relay):
     require(2000 <= day.year <= 2099, "Date build numbers support years 2000 through 2099")
     require(re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?", app_version),
             "Invalid upstream app version")
-    require(target in ["all", "desktop-macos-arm64", "desktop-linux-x64", "cli-linux-x64", "web"],
+    require(target in ["all", "desktop-all", "desktop-macos-arm64", "desktop-linux-x64", "cli-linux-x64", "web", "none"],
             "Unsupported desktop/CLI/web target")
     require(mobile in ["none", "ios", "android", "all"], "Unsupported mobile target")
     dated_tags = []
@@ -44,9 +44,9 @@ def release_plan(day, app_version, tags, target, mobile, relay):
     android_build = f"{stamp}{revision:02}"
     ios_build = f"{day.year % 100 * 100 + day.month}.{day.day}.{revision}"
     artifacts = []
-    if target in ["all", "desktop-macos-arm64"]:
+    if target in ["all", "desktop-all", "desktop-macos-arm64"]:
         artifacts.append(f"fork-desktop-macos-arm64-{version}")
-    if target in ["all", "desktop-linux-x64"]:
+    if target in ["all", "desktop-all", "desktop-linux-x64"]:
         artifacts.append(f"fork-desktop-linux-x64-{version}")
     if target in ["all", "desktop-linux-x64", "cli-linux-x64"]:
         artifacts.append(f"fork-cli-linux-x64-{version}")
@@ -58,6 +58,7 @@ def release_plan(day, app_version, tags, target, mobile, relay):
         artifacts.append(f"t3-code-android-self-use-{android_build}")
     if relay:
         artifacts.extend(["relay-linux-amd64-core", "relay-linux-amd64-web"])
+    require(artifacts, "Select at least one component to release")
     return {
         "tag": f"fork-{stamp}.{revision}",
         "version": version,
@@ -103,9 +104,42 @@ def make_plan():
         log_args.append(previous)
     changes = git(*log_args) or "- No additional fork commits."
     notes = os.environ.get("RELEASE_NOTES", "").strip()
+    builds = []
+    installation = []
+    for prefix, label in [
+        ("fork-desktop-macos-arm64-", "Desktop macOS arm64"),
+        ("fork-desktop-linux-x64-", "Desktop Linux x64"),
+        ("fork-cli-linux-x64-", "CLI Linux x64"),
+        ("fork-web-", "Static web"),
+    ]:
+        if any(name.startswith(prefix) for name in plan["artifacts"]):
+            builds.append(f"- {label}: `{plan['version']}`.")
+    has_desktop = any(name.startswith("fork-desktop-") for name in plan["artifacts"])
+    if has_desktop:
+        installation.append("- Desktop application names and package IDs are unchanged; official automatic updates are disabled.")
+    if any(name.startswith("fork-desktop-macos-") for name in plan["artifacts"]):
+        installation.append("- The macOS DMG is unsigned and not notarized; explicit operating-system approval may be required.")
+    if plan["mobile"] in ["ios", "all"]:
+        builds.append(f"- iOS: `{plan['mobile_version']}`; bundle build: `{plan['ios_build']}`.")
+        installation.append("- The iOS IPA is unsigned; re-sign it, including embedded extensions/frameworks, before installing.")
+    if plan["mobile"] in ["android", "all"]:
+        builds.append(f"- Android: `{plan['mobile_version']}`; versionCode: `{plan['android_build']}`.")
+        installation.append("- Android upgrades require the same signing key. Check the APK build/signature metadata.")
+    if plan["mobile"] != "none":
+        installation.append("- Mobile application names and package IDs are unchanged; official Expo OTA updates are disabled.")
+    if plan["target"] in ["all", "cli-linux-x64", "desktop-linux-x64"]:
+        installation.append("- The CLI archive includes the host server and does not require a separate Node.js installation.")
+    if plan["target"] in ["all", "web"]:
+        installation.append("- Serve the static web client over HTTPS; it connects to an existing host and does not run a host server.")
+    if plan["relay"]:
+        builds.append(f"- Relay Linux amd64: `{plan['version']}-core` / `{plan['version']}-web`.")
+        installation.append("- Relay Docker archives are attached. Import them on your host, or pull the versioned images if published to GHCR.")
+        installation.append("- Publishing this release does not deploy the images to your cluster.")
+    installation.append("- Only the listed components are updated. Other components remain on their previous releases.")
+    installation.append("- Review compatibility, configuration changes, and the components actually tested before publishing.")
     body = f"""## Upstream baseline
 
-- Desktop/CLI base: `{plan['version'].split('-')[0]}`
+- Upstream version: `{plan['version'].split('-')[0]}`
 - Upstream commit: https://github.com/pingdotgg/t3code/commit/{baseline}
 
 ## Fork changes
@@ -113,7 +147,7 @@ def make_plan():
 {notes or 'Review the included commits and describe user-facing changes before publishing.'}
 
 <details>
-<summary>Included fork commits</summary>
+<summary>Source changes across all components (review relevance to this release)</summary>
 
 {changes}
 
@@ -121,19 +155,14 @@ def make_plan():
 
 ## Builds
 
-- Desktop/CLI/Web: `{plan['version']}`; selected target: `{plan['target']}`.
-- Mobile: `{plan['mobile_version']}`; selected platforms: `{plan['mobile']}`.
-- iOS build: `{plan['ios_build']}`. Android versionCode: `{plan['android_build']}`.
+{chr(10).join(builds)}
 - Source: {server}/{repository}/commit/{source}
 - Build run: {plan['run']}
 - Assets are checked against this source commit and include SHA-256 checksums.
 
 ## Installation and upgrade
 
-- Application names and package IDs are unchanged; official automatic updates and Expo OTA are disabled.
-- macOS DMG and iOS IPA are unsigned; re-sign the IPA before installing.
-- Android upgrades require the same signing key. Check the APK build/signature metadata.
-- Review compatibility, configuration changes, and the platforms actually tested before publishing.
+{chr(10).join(installation)}
 """
     if plan["relay"]:
         body += "\n## Relay images\n\n"

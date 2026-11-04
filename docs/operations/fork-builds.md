@@ -36,8 +36,10 @@ published integration branch rather than rewriting its history.
 
 ## Run Builds
 
-Fork workflows start manually from `codex/build` and use GitHub-hosted runners.
-The three build workflows can also be called by **Fork Release**. They do not
+Run **Fork Release** manually from `codex/build` to select components and create
+a release draft on GitHub-hosted runners. The mobile and Relay workflows are
+reusable builders, not separate manual entry points. The desktop/CLI/web workflow
+also retains its standalone artifact-build entry point. These workflows do not
 publish to npm, submit to app stores, deploy to a cluster, or use the upstream's
 signing, Expo, or Cloudflare credentials.
 
@@ -46,7 +48,7 @@ they use maintainer runners and services. Their files stay in the repository.
 Checks for a pull request submitted upstream still run in the upstream repository.
 Re-enable an inherited workflow only after configuring its required services.
 
-In GitHub, open **Actions**, choose a workflow, and select **Run workflow** with
+In GitHub, open **Actions**, choose **Fork Release**, and select **Run workflow** with
 the `codex/build` branch. Download results under that run's **Artifacts**.
 Checksums and build provenance accompany the deliverables. Internal JS bundles
 are intermediate artifacts, not installable applications.
@@ -58,6 +60,24 @@ mobile platforms, whether to include Relay archives, and optionally publish the
 Relay images to GHCR. The defaults include all currently supported targets;
 Windows and additional architectures are still not supported. Add user-facing
 changes in `notes`, or edit them in the resulting draft.
+
+Use these selections for component-only releases:
+
+| Components                       | `target`        | `mobile`  | `relay`  |
+| -------------------------------- | --------------- | --------- | -------- |
+| Relay only                       | `none`          | `none`    | enabled  |
+| iOS only                         | `none`          | `ios`     | disabled |
+| Android only                     | `none`          | `android` | disabled |
+| Both mobile platforms            | `none`          | `all`     | disabled |
+| Both desktops, no standalone CLI | `desktop-all`   | `none`    | disabled |
+| CLI only                         | `cli-linux-x64` | `none`    | disabled |
+| Static web only                  | `web`           | `none`    | disabled |
+
+At least one component must be selected. A release includes only its selected
+assets, versions, and installation guidance. Unselected components keep their
+previous releases; old binaries are not copied into the new release. The source
+commit list spans all components, so describe the relevant changes in `notes`.
+Enable `publish_relay` together with `relay` to push the built images to GHCR.
 
 One dispatch pins every build to the caller's commit, even if the branch moves
 while macOS runners are queued. Version planning uses **Asia/Shanghai** dates
@@ -112,7 +132,9 @@ an incomplete draft: rerun the failed job before publishing it.
 - Linux x64 CLI alone, built and smoke-tested on Linux, without host Node.js.
 - A static web archive without source maps.
 
-Choose `all` or one target. The default version appends the workflow run and
+Choose `all`, `desktop-all`, or one target. `desktop-all` builds both desktops
+without a separate CLI archive; the single Linux desktop target also includes
+the CLI archive. For standalone builds, the default version appends the workflow run and
 attempt to the upstream version; an explicit version must be valid SemVer.
 The application name and package identities are unchanged. Official desktop
 automatic updates are disabled in the packaged application. Installation of a
@@ -129,8 +151,8 @@ CLI for WSL; do not replace that requirement with a cross-platform ZIP.
 
 ### iOS and Android
 
-**Fork mobile self-use** builds an unsigned iOS device IPA or an Android release
-APK, or both. Production package IDs are preserved. Expo OTA updates are disabled
+Select `mobile: ios`, `android`, or `all` in **Fork Release** to build an unsigned
+iOS device IPA or an Android release APK, or both. Production package IDs are preserved. Expo OTA updates are disabled
 in the native build, and JavaScript is embedded; neither Metro nor an Expo
 account is needed to run the installed application.
 
@@ -152,16 +174,14 @@ Actions secrets:
 Keep an offline backup of that key and its passphrases. Without these secrets,
 the workflow uses a new temporary debug key and labels the result accordingly;
 such builds cannot upgrade an existing installation signed by a previous run.
-Build numbers must increase for normal updates; a rerun of the same workflow
-uses the same default number, so provide a larger explicit number if needed.
-For standalone date builds, supply `version` (for example `2026.11.4`), Android
-`build_number` (`2026110401`), and `ios_build_number` (`2611.4.1`). These optional
-inputs are filled automatically by **Fork Release**.
+Build numbers must increase for normal updates. **Fork Release** allocates dated
+versions and build numbers automatically; rerunning a failed job retains its
+original numbers. Start a new release for a new upgrade build.
 
 ### Relay Docker Images
 
-**Fork Relay Images** builds and starts both Linux amd64 images before exporting
-them as compressed Docker archives:
+Enable `relay` in **Fork Release** to build and start both Linux amd64 images
+before exporting them as compressed Docker archives:
 
 - `core`: Rust relay only.
 - `web`: Rust relay plus the matching hosted web app, without source maps.
@@ -176,7 +196,7 @@ For K3s, import it into containerd on every eligible node, or pin the deployment
 to a node with the image. A local imported image needs a matching pull policy;
 it is not available from a registry merely because its name begins with `ghcr.io`.
 
-The optional `publish` input uploads the verified images to this fork's GHCR.
+The optional `publish_relay` input uploads the verified images to this fork's GHCR.
 For `njzydark/t3code`, the rolling tags are:
 
 ```text
@@ -184,8 +204,8 @@ ghcr.io/njzydark/t3code/selfhosted-relay:core
 ghcr.io/njzydark/t3code/selfhosted-relay:web
 ```
 
-Versioned tags additionally end in `-core` and `-web`. The default version is a
-commit SHA prefix. Only the publishing job receives `packages: write`; image
+Versioned tags use the dated fork version followed by `-core` or `-web`.
+Only the publishing job receives `packages: write`; image
 builds do not need registry credentials. A newly published GHCR package can be
 private: configure package visibility or Kubernetes image-pull credentials
 before relying on cluster pulls.
