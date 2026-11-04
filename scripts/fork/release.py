@@ -122,7 +122,16 @@ def make_plan():
     if has_desktop:
         installation.append("- Desktop application names and package IDs are unchanged; official automatic updates are disabled.")
     if any(name.startswith("fork-desktop-macos-") for name in plan["artifacts"]):
-        installation.append("- The macOS DMG is unsigned and not notarized; explicit operating-system approval may be required.")
+        installation.append(
+            "- The macOS build has no Developer ID signing or notarization. Copy the app to `/Applications` first. "
+            "If macOS blocks opening it, only for a download you trust (check `SHA256SUMS.txt`), "
+            "remove its quarantine attribute and reopen it:\n\n"
+            "  ```bash\n"
+            '  xattr -dr com.apple.quarantine "/Applications/T3 Code (Beta).app/"\n'
+            "  ```\n\n"
+            "  Adjust the path if installed elsewhere. This removes the download quarantine flag, "
+            "not the code signature; do not disable Gatekeeper globally."
+        )
     if plan["mobile"] in ["ios", "all"]:
         builds.append(f"- iOS: `{plan['mobile_version']}`; bundle build: `{plan['ios_build']}`.")
         installation.append("- The iOS IPA is unsigned; re-sign it, including embedded extensions/frameworks, before installing.")
@@ -173,6 +182,7 @@ def make_plan():
         body += "\n".join(f"- `{name}`" for name in plan["relay_images"]) + "\n"
         body += ("\nImages were published to GHCR.\n" if plan["relay_published"] else
                  "\nImages are attached as Docker archives; GHCR publishing was not requested.\n")
+        body += f"\n[Relay image setup and usage]({server}/{repository}/blob/{source}/infra/selfhosted-relay/README.md).\n"
     if previous:
         body += f"\nFull comparison: {server}/{repository}/compare/{previous}...{plan['tag']}\n"
     output = Path("release-plan")
