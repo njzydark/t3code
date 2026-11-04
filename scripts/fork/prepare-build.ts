@@ -8,7 +8,14 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
 
 export const repoRoot = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
-export const targets = ["all", "desktop-macos-arm64", "desktop-linux-x64", "cli-linux-x64", "web"];
+export const targets = [
+  "all",
+  "desktop-all",
+  "desktop-macos-arm64",
+  "desktop-linux-x64",
+  "cli-linux-x64",
+  "web",
+];
 
 export function validateVersion(version: string) {
   const numeric = "(?:0|[1-9][0-9]*)";
@@ -55,7 +62,7 @@ export function buildPlan(
       format: "AppImage",
       rust: "x86_64-unknown-linux-gnu",
     },
-  ].filter((entry) => target === "all" || target === entry.target);
+  ].filter((entry) => target === "all" || target === "desktop-all" || target === entry.target);
   return {
     version: resolvedVersion,
     desktop,

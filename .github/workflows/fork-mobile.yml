@@ -24,26 +24,6 @@ on:
         required: false
       ANDROID_KEY_PASSWORD:
         required: false
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Device build target
-        type: choice
-        options: [ios, android, all]
-        default: all
-        required: true
-      build_number:
-        description: Positive build number (1-2100000000); empty uses the workflow run number
-        type: string
-        default: ""
-      ios_build_number:
-        description: Optional iOS build (up to 4.2.2 digits); overrides build_number on iOS
-        type: string
-        default: ""
-      version:
-        description: Optional mobile app version (three integers, for example 2026.11.3)
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -75,6 +55,9 @@ jobs:
       MOBILE_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
       FORK_IOS_BUILD_NUMBER: ${{ inputs.ios_build_number }}
       T3CODE_MOBILE_VERSION: ${{ inputs.version }}
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 1G
+      CCACHE_COMPILERCHECK: content
     steps:
       # Credential cleanup in checkout traverses orphaned gitlinks in .repos.
       - name: Checkout public source without submodule traversal
@@ -110,6 +93,95 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Gradle dependency and task caches
+        if: matrix.target == 'android'
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+        with:
+          cache-read-only: false
+          dependency-graph: disabled
+          build-scan-publish: false
+
+      - name: Install native compiler cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ccache >/dev/null; then
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install ccache
+            else
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends ccache
+            fi
+          fi
+          echo "CCACHE_DIR=$RUNNER_TEMP/fork-mobile-ccache" >> "$GITHUB_ENV"
+          ccache --version
+
+      - name: Resolve native cache toolchain
+        id: native
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          {
+            ccache --version
+            if [[ "$PLATFORM" == ios ]]; then
+              xcodebuild -version
+              xcrun --sdk iphoneos --show-sdk-version
+              xcrun clang --version
+              pod --version
+            else
+              java -version 2>&1
+              cat apps/mobile/node_modules/react-native/gradle/libs.versions.toml
+              echo 'cmake;3.22.1'
+            fi
+          } > "$RUNNER_TEMP/fork-mobile-toolchain.txt"
+          echo "toolchain=$(shasum -a 256 "$RUNNER_TEMP/fork-mobile-toolchain.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          if [[ "$PLATFORM" == android ]]; then
+            python3 scripts/fork/mobile-native.py android-sdk \
+              apps/mobile/node_modules/react-native/gradle/libs.versions.toml > "$RUNNER_TEMP/fork-mobile-sdk.txt"
+            echo 'cmake;3.22.1' >> "$RUNNER_TEMP/fork-mobile-sdk.txt"
+            echo "sdk=$(shasum -a 256 "$RUNNER_TEMP/fork-mobile-sdk.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+            {
+              echo 'sdk-paths<<SDK_PATHS'
+              while IFS= read -r package; do
+                printf '%s/%s\n' "$ANDROID_HOME" "${package//;/\/}"
+              done < "$RUNNER_TEMP/fork-mobile-sdk.txt"
+              echo 'SDK_PATHS'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache required Android SDK packages
+        if: matrix.target == 'android'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.native.outputs.sdk-paths }}
+          key: fork-mobile-sdk-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native.outputs.sdk }}
+
+      - name: Cache CocoaPods and React Native downloads
+        if: matrix.target == 'ios'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/Library/Caches/ReactNative
+            ~/.cocoapods/repos
+          key: fork-mobile-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**') }}
+          restore-keys: |
+            fork-mobile-pods-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      # Commit-specific keys let immutable caches accumulate new object files.
+      - name: Cache native compiler objects
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/fork-mobile-ccache
+          key: fork-mobile-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native.outputs.toolchain }}-${{ github.sha }}
+          restore-keys: |
+            fork-mobile-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native.outputs.toolchain }}-
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
+
       - name: Check packaging helpers
         run: python3 -B scripts/fork/mobile_test.py
 
@@ -125,6 +197,19 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: bash scripts/fork/mobile-build.sh android
+
+      - name: Report compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null; then
+            {
+              echo '### Native compiler cache'
+              echo '```text'
+              ccache --show-stats
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload verified build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
