@@ -1,16 +1,12 @@
 # Fork-only mobile builds
 
-Run **Fork mobile self-use** (`.github/workflows/fork-mobile.yml`) manually on
-`codex/build` in a fork. Other branches and the upstream repository are skipped.
-Select `ios`, `android`, or `all`. The optional Android build number is a positive
-integer up to 2100000000, without leading zeros; empty uses `github.run_number`.
-An optional `ios_build_number` overrides it on iOS and accepts up to three
-components with at most 4/2/2 digits. Without an override, the shared build number
-must also fit the iOS format. `version` optionally sets the three-integer mobile
-app version, including the iOS extensions. Increase build numbers for upgrades;
-re-running a job reuses its build number.
+Run **Fork Release** manually on `codex/build` in a fork. Other branches and the
+upstream repository are skipped. Select `mobile: ios`, `android`, or `all`.
+For a mobile-only release, also choose `target: none` and disable `relay`.
+The underlying `.github/workflows/fork-mobile.yml` is reusable-only and has no
+separate manual dispatch.
 
-**Fork Release** calls this same workflow with dated versions. For example,
+**Fork Release** supplies dated versions and build numbers. For example,
 November 4, 2026's first release uses app version `2026.11.4`, Android build
 `2026110401`, and iOS build `2611.4.1`. See
 [fork releases](../../docs/operations/fork-builds.md#publish-a-fork-release).
@@ -20,7 +16,7 @@ artifacts; the release caller separately attaches these to a draft. The mobile
 workflow does not create releases, push, use EAS, contact Expo account
 services, or require an Expo account/token. Dependency downloads still require
 network access. Enable Actions in the fork first; manual dispatch also requires
-GitHub to recognize this workflow from the repository's default branch.
+GitHub to recognize Fork Release from the repository's default branch.
 
 ## Identity and updates
 
@@ -109,6 +105,30 @@ signature verification/certificate fingerprint, 16 KiB ZIP alignment, and
 services requiring upstream Firebase/OAuth configuration are not provisioned.
 
 ## Artifacts and local checks
+
+### Build caches
+
+The mobile workflow keeps the pnpm store, downloaded CocoaPods/React Native
+archives, required Android SDK/NDK/CMake packages, and Gradle dependencies and
+cacheable task outputs between runs. Gradle configuration caching is disabled
+because it can capture signing credentials. Signing keys and final IPA/APK files
+are not included in these caches.
+
+Both platforms install ccache with a 1 GiB limit. iOS enables React Native's
+compiler wrappers with `USE_CCACHE=1`; Android's React Native CMake integration
+detects ccache on PATH. Compiler caches are separated by OS, architecture, and
+toolchain, and each source commit can save new entries. Compiler input hashes
+still decide whether an object can be reused. iOS uses a stable DerivedData path
+to improve object-cache reuse, but neither DerivedData nor generated native
+projects are restored from Actions caches.
+
+The first build, toolchain upgrades, Swift compilation, linking, and uncacheable
+Gradle tasks can still take time. A warm cache does not skip version updates,
+bundling, signing, or artifact validation. Check the native compiler cache
+statistics and Gradle summary in the Actions run; macOS runner queue time is
+unaffected. Old cache entries can be evicted under the repository's cache quota.
+
+### Deliverables
 
 Each IPA/APK has its own `<artifact>.sha256`, `<artifact>.provenance.json`, and
 `<artifact>.build.txt`. Android also has `<artifact>.signature.txt` containing

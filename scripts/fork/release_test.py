@@ -73,6 +73,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(plan["android_build"], "2026110303")
         self.assertEqual(plan["previous_tag"], "fork-20261103.2")
         self.assertEqual(len(plan["artifacts"]), 8)
+        for target, mobile, relay, expected in [
+            ("none", "none", True, ["relay-linux-amd64-core", "relay-linux-amd64-web"]),
+            ("none", "ios", False, ["t3-code-ios-self-use-2611.3.1"]),
+            ("none", "android", False, ["t3-code-android-self-use-2026110301"]),
+            ("none", "all", False, ["t3-code-ios-self-use-2611.3.1", "t3-code-android-self-use-2026110301"]),
+            ("desktop-all", "none", False, ["fork-desktop-macos-arm64-0.1.6-fork.20261103.1",
+                                            "fork-desktop-linux-x64-0.1.6-fork.20261103.1"]),
+            ("cli-linux-x64", "none", False, ["fork-cli-linux-x64-0.1.6-fork.20261103.1"]),
+        ]:
+            with self.subTest(target=target, mobile=mobile, relay=relay):
+                selected = release.release_plan(date(2026, 11, 3), "0.1.6", [], target, mobile, relay)
+                self.assertEqual(selected["artifacts"], expected)
+        with self.assertRaisesRegex(ValueError, "Select at least one"):
+            release.release_plan(date(2026, 11, 3), "0.1.6", [], "none", "none", False)
         previous_ios = (2611, 3, 3)
         previous_android = int(plan["android_build"])
         for day in [date(2026, 11, 4), date(2026, 12, 1), date(2027, 1, 1)]:
@@ -102,6 +116,9 @@ class ReleaseTests(unittest.TestCase):
             (plan_dir / "fork-release.json").write_text(json.dumps(plan))
             artifact_dir = downloads / plan["artifacts"][0]
             artifact_dir.mkdir()
+            unselected = downloads / "t3-code-ios-self-use-2611.3.1"
+            unselected.mkdir()
+            (unselected / "old.ipa").write_bytes(b"unselected build")
             artifact = artifact_dir / "web.tar.gz"
             artifact.write_bytes(b"packaged web")
             provenance = artifact_dir / "fork-web-provenance.json"
@@ -120,6 +137,7 @@ class ReleaseTests(unittest.TestCase):
                 output = root / "release"
                 release.assemble(downloads, output)
                 self.assertEqual((output / artifact.name).read_bytes(), artifact.read_bytes())
+                self.assertFalse((output / "old.ipa").exists())
                 self.assertIn("fork-release.json", (output / "SHA256SUMS.txt").read_text())
                 for key, value in [("commit", "b" * 40), ("repository", "other/repo"), ("version", "0.1.6")]:
                     with self.subTest(key=key):
