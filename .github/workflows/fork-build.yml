@@ -20,6 +20,7 @@ on:
         default: all
         options:
           - all
+          - desktop-all
           - desktop-macos-arm64
           - desktop-linux-x64
           - cli-linux-x64
