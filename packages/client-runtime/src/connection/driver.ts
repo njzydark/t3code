@@ -2,10 +2,10 @@ import { msg } from "gt-i18n";
 import { translatableDetail } from "../errors/translatable.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
@@ -29,6 +29,7 @@ import {
   usableRoutes,
 } from "./routes.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
@@ -182,6 +183,7 @@ export const make = Effect.gen(function* () {
   const sessions = yield* RpcSession.RpcSessionFactory;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
   const httpClient = yield* HttpClient.HttpClient;
+  const selfHostedRelay = yield* ClientCapabilities.SelfHostedRelayGateway;
 
   // The descriptor is public, so this sends no credential to whatever
   // answers at a saved LAN address on a different network.
@@ -243,6 +245,12 @@ export const make = Effect.gen(function* () {
       (route) => checkRoute(entry, route),
       Effect.fnUntraced(function* (route) {
         yield* reportProgress({ stage: "preparing" });
+        const profile = Option.getOrNull(route.profile);
+        if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) {
+          const address = profile.selfHostedRelay;
+          // A half-open encrypted channel must not outlive the RPC attempt that detected it.
+          yield* Effect.addFinalizer(() => selfHostedRelay.disconnect(address));
+        }
         const prepared = yield* resolver.prepare(routeEntry(entry, route));
         yield* reportProgress({ stage: "opening", prepared });
         const session = yield* sessions.connect(prepared);
