@@ -86,6 +86,9 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.image.outputs.name }}
           labels: |
+            org.opencontainers.image.title=T3 Self-hosted Relay
+            org.opencontainers.image.description=Encrypted self-hosted relay for this T3 Code fork. core is relay-only; web also serves the web client. Setup: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/infra/selfhosted-relay/README.md
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/infra/selfhosted-relay/README.md
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           outputs: type=docker,dest=${{ runner.temp }}/relay.tar

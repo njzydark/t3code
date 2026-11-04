@@ -143,8 +143,17 @@ the CLI archive. For standalone builds, the default version appends the workflow
 attempt to the upstream version; an explicit version must be valid SemVer.
 The application name and package identities are unchanged. Official desktop
 automatic updates are disabled in the packaged application. Installation of a
-new fork build is manual. Unsigned macOS applications may require the operating
-system's explicit approval to open.
+new fork build is manual. If macOS blocks opening a trusted download, verify
+`SHA256SUMS.txt`, copy the app to `/Applications`, then remove its download
+quarantine attribute and reopen it:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/T3 Code (Beta).app/"
+```
+
+Adjust the path if installed elsewhere. This does not remove the code signature
+or require disabling Gatekeeper globally. macOS Release notes include this
+guidance only when a macOS build is selected.
 
 The static web app is a client, not a Linux host/server. Serve it over HTTPS and
 connect with a pairing link. For a relay with hosted web, use the relay `web`
@@ -210,6 +219,10 @@ ghcr.io/njzydark/t3code/selfhosted-relay:web
 ```
 
 Versioned tags use the dated fork version followed by `-core` or `-web`.
+The [Relay image README](../../infra/selfhosted-relay/README.md) is the image's
+setup entry point, linked from Relay Release notes and the OCI documentation
+label. GHCR displays the linked repository's README rather than a custom
+subdirectory README; the image description identifies the Relay separately.
 Only the publishing job receives `packages: write`; image
 builds do not need registry credentials. A newly published GHCR package can be
 private: configure package visibility or Kubernetes image-pull credentials
