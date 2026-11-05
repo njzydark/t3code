@@ -185,14 +185,17 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       readonly qrShareable: boolean;
     }> = [];
     if (!credential) return options;
-    if (pairingUrl) return [{
-      id: "self-hosted-relay",
-      preferenceKey: "self-hosted-relay",
-      label: "Self-hosted relay",
-      url: pairingUrl,
-      detail: new URL(pairingUrl).origin,
-      qrShareable: !isLoopbackHostname(new URL(pairingUrl).hostname),
-    }];
+    if (pairingUrl)
+      return [
+        {
+          id: "self-hosted-relay",
+          preferenceKey: "self-hosted-relay",
+          label: "Self-hosted relay",
+          url: pairingUrl,
+          detail: new URL(pairingUrl).origin,
+          qrShareable: !isLoopbackHostname(new URL(pairingUrl).hostname),
+        },
+      ];
     for (const endpoint of endpoints) {
       if (endpoint.status === "unavailable") {
         continue;
@@ -617,7 +620,8 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   const canPairViaRelay = useAtomValue(pairSelfHostedRelay.permissionAtom(environmentId));
   const pairViaRelay = useAtomCommand(pairSelfHostedRelay, { reportFailure: false });
   const [connectionType, setConnectionType] = useState<"direct" | "relay">("direct");
-  const relayUnavailable = connectionType === "relay" &&
+  const relayUnavailable =
+    connectionType === "relay" &&
     (relay.error !== null || relay.data?.phase !== "connected" || !canPairViaRelay);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
@@ -638,9 +642,10 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     setIsCreatingPairingLink(true);
     const trimmedLabel = pairingLabel.trim();
     const input = { ...(trimmedLabel ? { label: trimmedLabel } : {}), scopes: selectedScopes };
-    const result = connectionType === "relay"
-      ? await pairViaRelay({ environmentId, input })
-      : await createPairingCredential({ environmentId, input });
+    const result =
+      connectionType === "relay"
+        ? await pairViaRelay({ environmentId, input })
+        : await createPairingCredential({ environmentId, input });
     if (result._tag === "Success") {
       onPairingLinkCreated(result.value, "url" in result.value ? result.value.url : undefined);
       setConnectionType("direct");
@@ -722,45 +727,45 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-                {relay.data?.hasRegistrationToken || connectionType === "relay" ? (
-                  <div className="space-y-1.5">
-                    <span id="pairing-connection-type" className="text-xs font-medium">
-                      Connection type
-                    </span>
-                    <Select
-                      value={connectionType}
-                      onValueChange={(value) => {
-                        if (value === "direct" || value === "relay") setConnectionType(value);
-                      }}
-                    >
-                      <SelectTrigger
-                        aria-labelledby="pairing-connection-type"
-                        disabled={isCreatingPairingLink}
-                      >
-                        <SelectValue>
-                          {connectionType === "relay"
-                            ? "Self-hosted relay"
-                            : "Direct / existing address"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup>
-                        <SelectItem value="direct">Direct / existing address</SelectItem>
-                        <SelectItem value="relay">Self-hosted relay</SelectItem>
-                      </SelectPopup>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
+            {relay.data?.hasRegistrationToken || connectionType === "relay" ? (
+              <div className="space-y-1.5">
+                <span id="pairing-connection-type" className="text-xs font-medium">
+                  Connection type
+                </span>
+                <Select
+                  value={connectionType}
+                  onValueChange={(value) => {
+                    if (value === "direct" || value === "relay") setConnectionType(value);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-labelledby="pairing-connection-type"
+                    disabled={isCreatingPairingLink}
+                  >
+                    <SelectValue>
                       {connectionType === "relay"
-                        ? `Via ${relay.data?.relayUrl ?? "your relay"}. No direct access to this host is needed.`
-                        : "Use an existing host address, such as LAN, Tailscale or a configured public endpoint."}
-                    </p>
-                    {relayUnavailable ? (
-                      <p role="status" className="text-xs text-warning">
-                        {relay.error ??
-                          "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct."}
-                      </p>
-                    ) : null}
-                  </div>
+                        ? "Self-hosted relay"
+                        : "Direct / existing address"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="direct">Direct / existing address</SelectItem>
+                    <SelectItem value="relay">Self-hosted relay</SelectItem>
+                  </SelectPopup>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {connectionType === "relay"
+                    ? `Via ${relay.data?.relayUrl ?? "your relay"}. No direct access to this host is needed.`
+                    : "Use an existing host address, such as LAN, Tailscale or a configured public endpoint."}
+                </p>
+                {relayUnavailable ? (
+                  <p role="status" className="text-xs text-warning">
+                    {relay.error ??
+                      "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct."}
+                  </p>
                 ) : null}
+              </div>
+            ) : null}
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-foreground">
                 Client label (optional)

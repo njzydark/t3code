@@ -5,14 +5,13 @@
   "scripts": {
     "start": "cargo run --locked --release",
     "build": "cargo build --locked --release",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "cargo test --locked && vp test run --config ../../vite.config.ts --dir ."
   },
   "devDependencies": {
     "@t3tools/relay-transport": "workspace:*",
     "@types/node": "catalog:",
     "@types/ws": "catalog:",
-    "typescript": "catalog:",
     "vite-plus": "catalog:",
     "ws": "catalog:"
   }
