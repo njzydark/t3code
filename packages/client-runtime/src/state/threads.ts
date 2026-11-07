@@ -42,6 +42,7 @@ import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyOrchestrationV2ProjectionEvent } from "./orchestrationV2Projection.ts";
 import { THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { reuseUnchanged } from "./serverConfigProjection.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
 import { fetchEnvironmentThreadHistoryPage } from "./threadHistoryHttp.ts";
 import {
@@ -457,7 +458,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             : previous.history;
       return {
         ...previous,
-        data: Option.some(thread),
+        data: Option.some(reuseUnchanged(Option.getOrUndefined(previous.data), thread)),
         status: Option.isSome(previous.error)
           ? ("cached" as const)
           : waiting
@@ -471,12 +472,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // Active projections can update many times per second and retain large tool
     // payloads. Persist once the run settles so cache encoding stays off the
     // streaming path. Progressive meta rides along when the window is incomplete.
-    if (shouldPersistThread(thread, next.history)) {
+    const projection = Option.getOrThrow(next.data);
+    if (shouldPersistThread(projection, next.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
       yield* queuePersist(
         snapshotToPersist(
           snapshotSequence,
-          thread,
+          projection,
           next.history,
           yield* Ref.get(acceptsBoundedSocketSnapshots),
         ),

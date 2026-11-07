@@ -4,7 +4,9 @@ import {
   EventId,
   MessageId,
   NodeId,
+  OrchestrationV2ThreadProjectionJson,
   ORCHESTRATION_V2_WS_METHODS,
+  PlanId,
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
@@ -79,6 +81,9 @@ const BASE_PROJECTION: OrchestrationV2ThreadProjection = {
   ...v2Projection,
   thread: { ...v2Projection.thread, title: "Cached thread" },
 };
+const ProjectionJson = Schema.fromJsonString(OrchestrationV2ThreadProjectionJson);
+const encodeProjection = Schema.encodeEffect(ProjectionJson);
+const decodeProjection = Schema.decodeEffect(ProjectionJson);
 
 const TEST_DEFECT = { defect: "Malformed snapshot" } as const;
 
@@ -407,6 +412,82 @@ const deleted = (sequence = 3): OrchestrationV2ThreadStreamItem => {
 };
 
 describe("EnvironmentThreads", () => {
+  it.effect("retains unchanged historical plans across reconnect snapshots", () =>
+    Effect.gen(function* () {
+      const plan: OrchestrationV2TurnItem = {
+        id: TurnItemId.make("historical-plan"),
+        threadId: THREAD_ID,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "completed",
+        title: null,
+        startedAt: v2Now,
+        completedAt: v2Now,
+        updatedAt: v2Now,
+        type: "proposed_plan",
+        planId: PlanId.make("plan-historical"),
+        markdown: "# Historical plan\n\nKeep the reader's place.",
+        streaming: false,
+      };
+      const projection: OrchestrationV2ThreadProjection = {
+        ...BASE_PROJECTION,
+        turnItems: [plan],
+        visibleTurnItems: [
+          {
+            position: 0,
+            visibility: "local",
+            sourceThreadId: THREAD_ID,
+            sourceItemId: plan.id,
+            item: plan,
+          },
+        ],
+      };
+      const encoded = yield* encodeProjection(projection);
+      const harness = yield* makeHarness({ cached: projection });
+      yield* awaitThreadState(harness.observed, (state) => state.status === "live");
+      yield* harness.replaceSession;
+      yield* SubscriptionRef.changes(harness.subscriptionCount).pipe(
+        Stream.filter((count) => count >= 2),
+        Stream.runHead,
+      );
+      yield* Queue.offer(harness.inputs, snapshot(yield* decodeProjection(encoded), 8));
+      const restored = yield* awaitThreadState(harness.observed, (state) => state.sequence === 8);
+      expect(Option.getOrThrow(restored.data)).toBe(projection);
+
+      yield* Queue.offer(
+        harness.inputs,
+        snapshot(
+          yield* decodeProjection(
+            yield* encodeProjection({
+              ...projection,
+              thread: { ...projection.thread, title: "Updated title" },
+            }),
+          ),
+          9,
+        ),
+      );
+      const updated = Option.getOrThrow(
+        (yield* awaitThreadState(harness.observed, (state) => state.sequence === 9)).data,
+      );
+      expect(updated.thread.title).toBe("Updated title");
+      expect(updated.turnItems).toBe(projection.turnItems);
+      expect(updated.visibleTurnItems).toBe(projection.visibleTurnItems);
+
+      const changed = encoded.replaceAll("Keep the reader's place.", "The plan changed.");
+      yield* Queue.offer(harness.inputs, snapshot(yield* decodeProjection(changed), 10));
+      const changedPlan = Option.getOrThrow(
+        (yield* awaitThreadState(harness.observed, (state) => state.sequence === 10)).data,
+      ).visibleTurnItems[0]!.item;
+      expect(changedPlan).not.toBe(plan);
+      expect(changedPlan).toMatchObject({ markdown: expect.stringContaining("The plan changed.") });
+    }),
+  );
+
   it.effect.each([
     ["disk", false],
     ["retained", false],

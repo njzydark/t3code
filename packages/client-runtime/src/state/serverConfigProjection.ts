@@ -29,6 +29,22 @@ export function withoutEnvironmentThemes(config: ServerConfig): ServerConfig {
  * Reuse deep-equal objects so memoized UI can skip unchanged providers, models, and skills.
  */
 export function reuseUnchanged<T>(previous: unknown, next: T): T {
+  const seen = new WeakMap<object, unknown>();
+  const share = <A>(before: unknown, after: A): A => {
+    if (typeof after !== "object" || after === null) return after;
+    if (seen.has(after)) return seen.get(after) as A;
+    const value = reuseUnchangedValue(before, after, share);
+    seen.set(after, value);
+    return value;
+  };
+  return share(previous, next);
+}
+
+function reuseUnchangedValue<T>(
+  previous: unknown,
+  next: T,
+  share: <A>(previous: unknown, next: A) => A,
+): T {
   if (Object.is(previous, next)) return next;
   if (
     typeof previous !== "object" ||
@@ -43,7 +59,7 @@ export function reuseUnchanged<T>(previous: unknown, next: T): T {
     const before = previous as ReadonlyArray<unknown>;
     let same = before.length === next.length;
     const merged = next.map((item, index) => {
-      const reused = reuseUnchanged(before[index], item);
+      const reused = share(before[index], item);
       if (reused !== before[index]) same = false;
       return reused;
     });
@@ -58,7 +74,7 @@ export function reuseUnchanged<T>(previous: unknown, next: T): T {
   let same = keys.length === Object.keys(before).length;
   const merged: Record<string, unknown> = {};
   for (const key of keys) {
-    const reused = reuseUnchanged(before[key], after[key]);
+    const reused = share(before[key], after[key]);
     if (reused !== before[key] || !(key in before)) same = false;
     merged[key] = reused;
   }
