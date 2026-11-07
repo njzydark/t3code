@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off -- The Node socket adapter owns and clears its connection heartbeat timers.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- This boundary proxies raw headers and streaming bodies without fetch decompression.
 import * as NodeHttp from "node:http";
 import { WebSocket } from "ws";
@@ -14,11 +15,31 @@ import {
 } from "./protocol.ts";
 import { openSocket, secureSocket, type RelaySocketFactory } from "./secure.ts";
 
-const nodeSocket: RelaySocketFactory = (url) =>
-  new WebSocket(url, {
+const nodeSocket: RelaySocketFactory = (url) => {
+  const socket = new WebSocket(url, {
     maxPayload: 128 * 1024,
     perMessageDeflate: false,
   });
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let alive = true;
+  socket.on("pong", () => {
+    alive = true;
+  });
+  socket.once("open", () => {
+    // Detect silent network loss locally even when the relay's close frame cannot reach us.
+    heartbeat = setInterval(() => {
+      if (!alive) {
+        socket.terminate();
+        return;
+      }
+      alive = false;
+      socket.ping();
+    }, 30_000);
+    heartbeat.unref();
+  });
+  socket.once("close", () => clearInterval(heartbeat));
+  return socket;
+};
 
 const HOP_HEADERS = new Set([
   "connection",
