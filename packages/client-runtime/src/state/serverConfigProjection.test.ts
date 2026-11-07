@@ -28,6 +28,14 @@ describe("reuseUnchanged", () => {
     expect(next[0]!.models).toBe(previous[0]!.models);
     const dropped = reuseUnchanged({ a: 1, b: 2 }, { a: 1 });
     expect(dropped).toEqual({ a: 1 });
+    const updated = provider("b", ["x"]);
+    const shared = reuseUnchanged(
+      { listed: previous[0], selected: previous[0] },
+      { listed: updated, selected: updated },
+    );
+    expect(shared.selected).toBe(shared.listed);
+    expect(shared.selected.checkedAt).toBe("b");
+    expect(shared.selected.models).toBe(previous[0]!.models);
   });
 });
 
