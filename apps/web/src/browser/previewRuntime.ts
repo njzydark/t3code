@@ -1,10 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, PreviewRuntime, PreviewSessionSnapshot } from "@t3tools/contracts";
+import { relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
 
 import { isElectron } from "~/env";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
+import { readPreparedConnection } from "~/state/session";
 import {
   readEnvironmentSupportsServerBrowser,
   useEnvironmentSupportsServerBrowser,
@@ -16,7 +18,13 @@ export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime 
     isPreviewSupportedInRuntime() &&
     environmentId !== appAtomRegistry.get(primaryEnvironmentIdAtom)
   ) {
-    return undefined;
+    const connection = readPreparedConnection(environmentId);
+    if (
+      connection?.target?._tag !== "RelayConnectionTarget" &&
+      (!connection || relayRouteFromUrl(connection.httpBaseUrl) === null)
+    ) {
+      return undefined;
+    }
   }
   return "server";
 }

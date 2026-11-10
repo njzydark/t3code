@@ -5,6 +5,7 @@ import type {
 } from "@t3tools/contracts";
 import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
+import { relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
 
 import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 
@@ -17,7 +18,15 @@ export { normalizeHostname, isLocalLoopbackHost } from "@t3tools/shared/hostClas
 const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
   const connection = readPreparedConnection(environmentId);
   if (!connection) throw new Error(`Environment ${environmentId} is not connected.`);
-  return new URL(connection.httpBaseUrl);
+  const url = new URL(connection.httpBaseUrl);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    relayRouteFromUrl(url.href) !== null ||
+    connection.target?._tag === "RelayConnectionTarget"
+  ) {
+    throw new Error("This connection does not expose a directly reachable environment host.");
+  }
+  return url;
 };
 
 const resolveEnvironmentPortTarget = (

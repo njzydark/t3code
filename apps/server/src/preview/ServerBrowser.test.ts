@@ -109,6 +109,7 @@ function makeSession(
       Promise.all(events.listeners(name).map((listener) => listener(...args))),
     detach: vi.fn(async () => {}),
     send: vi.fn(async (method: string, input?: unknown): Promise<Record<string, unknown>> => {
+      await viewerCdpGate?.(method, input);
       if (method === "Page.getNavigationHistory") return { currentIndex: 0, entries: [{}] };
       if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { pageX: 0, pageY: 0 } };
       if (method === "Page.captureScreenshot") {
@@ -381,6 +382,7 @@ const contexts: ReturnType<typeof makeContext>[] = [];
 const encoderStreams: Array<{ frameRate: number | undefined; bitsPerSecond: number }> = [];
 const contextRequests: Array<{ profileId: string; isolated: boolean }> = [];
 let contextGate: PromiseWithResolvers<void> | null = null;
+let viewerCdpGate: ((method: string, input: unknown) => Promise<void> | undefined) | null = null;
 let pageCopy = "";
 let keyCopy = "";
 let focusedFrame: ReturnType<typeof makeFrame> | null = null;
@@ -565,6 +567,7 @@ beforeEach(() => {
   encoderStreams.length = 0;
   contextRequests.length = 0;
   contextGate = null;
+  viewerCdpGate = null;
   contextFailure = null;
   pageSetupFailure = null;
   initialNavigation = null;
@@ -1025,6 +1028,92 @@ it.live("enforces provider ownership and explicit targets when a session has mul
   ).pipe(Effect.provide(layer)),
 );
 
+it.effect.each(["Page.stopScreencast", "Page.startScreencast", "Page.captureScreenshot"])(
+  "attaches a viewer without waiting for an unresponsive %s",
+  (stalledMethod) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, tabId } = yield* ready;
+        const viewerScope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(viewerScope, Exit.void));
+        const started = Promise.withResolvers<void>();
+        const reply = Promise.withResolvers<void>();
+        viewerCdpGate = (method) => {
+          if (method !== stalledMethod) return;
+          started.resolve();
+          return reply.promise;
+        };
+        const attaching = yield* browser
+          .attachViewer(viewerInput(tabId, false))
+          .pipe(Effect.provideService(Scope.Scope, viewerScope), Effect.forkScoped);
+        yield* Effect.promise(() => started.promise);
+        yield* Effect.addFinalizer(() => Effect.sync(() => reply.resolve()));
+        yield* TestClock.adjust("2 seconds");
+        expect(
+          attaching.pollUnsafe(),
+          "viewer socket must not wait for renderer replies",
+        ).toBeDefined();
+        const viewer = yield* Fiber.join(attaching);
+        expect(yield* Queue.takeAll(viewer.output)).toContainEqual(
+          expect.objectContaining({ _tag: "control" }),
+        );
+        const closing = yield* Scope.close(viewerScope, Exit.void).pipe(Effect.forkScoped);
+        yield* TestClock.adjust("0 seconds");
+        expect(closing.pollUnsafe(), "disconnect must not wait for renderer replies").toBeDefined();
+        expect(contexts[0]!.sessions.at(-1)!.detach).toHaveBeenCalled();
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+it.effect(
+  "releases the capture lock after a stalled viewer still and discards its late reply",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, broker, tabId } = yield* ready;
+        const started = Promise.withResolvers<void>();
+        const reply = Promise.withResolvers<void>();
+        viewerCdpGate = (method, input) => {
+          if (
+            method !== "Page.captureScreenshot" ||
+            (input as { format: string }).format !== "jpeg"
+          )
+            return;
+          viewerCdpGate = null;
+          started.resolve();
+          return reply.promise;
+        };
+        const attaching = yield* browser
+          .attachViewer(viewerInput(tabId, false))
+          .pipe(Effect.forkScoped);
+        yield* Effect.promise(() => started.promise);
+        yield* Effect.addFinalizer(() => Effect.sync(() => reply.resolve()));
+        yield* TestClock.adjust("2 seconds");
+        expect(
+          attaching.pollUnsafe(),
+          "viewer must attach before its still completes",
+        ).toBeDefined();
+        const viewer = yield* Fiber.join(attaching);
+        const snapshot = yield* broker.invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+        });
+        expect(snapshot.accessibilityTree).toContain("delete");
+        reply.resolve();
+        const second = yield* browser.attachViewer(viewerInput(tabId, false));
+        yield* Stream.fromQueue(second.output).pipe(
+          Stream.filter((output) => output._tag === "frame"),
+          Stream.runHead,
+        );
+        expect(
+          (yield* Queue.takeAll(viewer.output)).some((output) => output._tag === "frame"),
+        ).toBe(false);
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
 it.live("streams to a read-only viewer without allowing takeover, input, or viewport changes", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1043,7 +1132,10 @@ it.live("streams to a read-only viewer without allowing takeover, input, or view
         yield* viewer.input(message);
       expect(page.setViewportSize).not.toHaveBeenCalled();
       expect(session.send.mock.calls.some(([method]) => method.startsWith("Input."))).toBe(false);
-      const outputs = yield* Queue.takeAll(viewer.output);
+      const outputs = yield* Stream.fromQueue(viewer.output).pipe(
+        Stream.takeUntil((output) => output._tag === "frame"),
+        Stream.runCollect,
+      );
       expect(outputs).toContainEqual(
         expect.objectContaining({ _tag: "frame", data: Buffer.from("frame") }),
       );

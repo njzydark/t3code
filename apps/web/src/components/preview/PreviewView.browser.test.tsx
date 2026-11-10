@@ -33,6 +33,17 @@ const mocks = vi.hoisted(() => ({
   idleServerTab: false,
   loading: false,
   nativeServerTab: false,
+  streamedServerTab: false,
+  idle: false,
+  createStream: vi.fn(),
+  streamSend: vi.fn(() => false),
+  recents: [] as { url: string; lastVisitedAt: number; title?: string }[],
+  access: {
+    httpBase: "http://preview.test",
+    wsBase: "ws://preview.test",
+    query: {},
+    credentials: false,
+  },
   serverEpoch: null as string | null,
   servers: [] as PreviewableServer[],
   recordingTabIds: new Set<string>(),
@@ -81,6 +92,7 @@ vi.mock(import("./previewBridge"), async (original) => ({
 vi.mock(import("~/browserHistoryStore"), async (original) => ({
   ...(await original()),
   recordVisitForThread: mocks.recordVisitForThread,
+  useThreadRecentHistory: () => mocks.recents,
 }));
 vi.mock(import("~/state/session"), async (original) => ({
   ...(await original()),
@@ -116,29 +128,23 @@ vi.mock(import("~/previewStateStore"), async (original) => ({
     recentlySeenUrls: [],
     sessions: mocks.showEmptyState
       ? {}
-      : mocks.idleServerTab
-        ? {
-            "tab-1": {
-              threadId: "thread-1",
-              tabId: "tab-1",
-              runtime: "server",
-              navStatus: { _tag: "Idle" },
-              canGoBack: false,
-              canGoForward: false,
-              updatedAt: "2026-07-13T00:00:00.000Z",
-            },
-          }
-        : {
-            "tab-1": {
-              threadId: "thread-1",
-              tabId: "tab-1",
-              runtime: mocks.nativeServerTab ? "server" : "desktop",
-              navStatus: { _tag: "Success", url: "http://example.com/", title: "Example" },
-              canGoBack: false,
-              canGoForward: false,
-              updatedAt: "2026-07-13T00:00:00.000Z",
-            },
+      : {
+          "tab-1": {
+            threadId: "thread-1",
+            tabId: "tab-1",
+            runtime:
+              mocks.nativeServerTab || mocks.streamedServerTab || mocks.idleServerTab
+                ? "server"
+                : "desktop",
+            navStatus:
+              mocks.idle || mocks.idleServerTab
+                ? { _tag: "Idle" }
+                : { _tag: "Success", url: "http://example.com/", title: "Example" },
+            canGoBack: false,
+            canGoForward: false,
+            updatedAt: "2026-07-13T00:00:00.000Z",
           },
+        },
   })) as never,
 }));
 vi.mock(import("~/state/environments"), async (original) => ({
@@ -167,12 +173,14 @@ vi.mock(import("~/browser/previewRuntime"), async (original) => ({
 }));
 
 vi.mock(import("~/browser/browserViewportActions"), { spy: true });
-// The real surface opens a preview stream to the server; only its box matters here.
-vi.mock(import("~/browser/ServerBrowserSurface"), async (original) => ({
+vi.mock(import("~/state/previewStream"), async (original) => ({
   ...(await original()),
-  ServerBrowserSurface: ((props: { className?: string }) => (
-    <div data-testid="server-browser-surface" className={props.className} />
-  )) as never,
+  usePreviewStreamAccess: () => mocks.access,
+}));
+vi.mock(import("@t3tools/client-runtime/preview/server-browser-stream"), async (original) => ({
+  ...(await original()),
+  createPreviewStreamClient: mocks.createStream,
+  createPreviewFramePainter: () => ({ paint: () => {}, stop: () => {} }),
 }));
 
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -219,6 +227,11 @@ function annotation(id: string, screenshot: unknown = null) {
 // resetting them.
 function setup() {
   vi.clearAllMocks();
+  mocks.streamedServerTab = false;
+  mocks.idle = false;
+  mocks.recents = [];
+  mocks.streamSend.mockReset().mockReturnValue(false);
+  mocks.createStream.mockImplementation(() => ({ send: mocks.streamSend, stop: () => {} }));
   mocks.readEnvironmentScope.mockReset().mockReturnValue(true);
   mocks.setAnnotationSendEnabled.mockReset().mockResolvedValue(undefined);
   mocks.pickElement.mockReset();
@@ -240,6 +253,64 @@ function setup() {
 }
 
 describe("PreviewView", () => {
+  it.each(["address", "history", "server"] as const)(
+    "retains the last URL selected through %s while a blank server tab connects",
+    async (source) => {
+      setup();
+      mocks.streamedServerTab = true;
+      mocks.idle = true;
+      const url = "http://127.0.0.1:8080/manual";
+      mocks.recents = [{ url, title: "Saved page", lastVisitedAt: 0 }];
+      mocks.servers = [
+        {
+          host: "localhost",
+          port: 8080,
+          url,
+          requestedUrl: url,
+          processName: "Test server",
+          pid: null,
+          terminal: null,
+          source: "scanner",
+        },
+      ];
+      await using _screen = await render(
+        <div style={{ display: "flex", width: 800, height: 600 }}>{view()}</div>,
+      );
+      await vi.waitFor(() => expect(mocks.createStream).toHaveBeenCalled());
+      const input = page.getByPlaceholder("Search or enter URL");
+      await expect.element(input).toBeEnabled();
+      await input.fill("http://127.0.0.1:8080/superseded");
+      await userEvent.keyboard("{Enter}");
+      if (source === "address") {
+        await input.fill(url);
+        await userEvent.keyboard("{Enter}");
+      } else {
+        await userEvent.click(
+          page.getByRole("button", { name: source === "history" ? /Saved page/ : /Test server/ }),
+        );
+      }
+      mocks.streamSend.mockClear().mockReturnValue(true);
+      const handlers = mocks.createStream.mock.calls.at(-1)![1];
+      const owned = { canOperate: true, controller: "you", generation: 1, dialog: null };
+      await act(() => handlers.onControl(owned));
+      await vi.waitFor(() =>
+        expect(mocks.streamSend).toHaveBeenCalledWith({ type: "navigate", url }),
+      );
+      expect(mocks.streamSend).not.toHaveBeenCalledWith({
+        type: "navigate",
+        url: "http://127.0.0.1:8080/superseded",
+      });
+      mocks.streamSend.mockClear();
+      await act(() => handlers.onControl(owned));
+      expect(mocks.streamSend).not.toHaveBeenCalled();
+      await act(() =>
+        handlers.onControl({ ...owned, controller: "another-viewer", generation: 2 }),
+      );
+      await expect.element(input).toBeDisabled();
+      await userEvent.click(page.getByRole("button", { name: /Saved page/ }));
+      expect(mocks.streamSend).not.toHaveBeenCalled();
+    },
+  );
   it.each(["mailto:alice@example.com", "http://"])(
     "reports rejected address %s without navigating or recording it",
     async (address) => {

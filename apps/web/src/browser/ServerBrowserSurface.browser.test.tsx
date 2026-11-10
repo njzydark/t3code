@@ -7,7 +7,7 @@ import type {
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
-import { act, render } from "../../test/render";
+import { act, fakeTimers, render } from "../../test/render";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn<(target: unknown, handlers: PreviewStreamEvents) => unknown>(),
@@ -218,5 +218,29 @@ describe("ServerBrowserSurface history", () => {
 
     press("pointerdown", 0);
     expect(mouseInputs()).not.toEqual([]);
+  });
+});
+
+describe("ServerBrowserSurface connection startup", () => {
+  it("offers a retry when the stream never delivers control", async () => {
+    setup();
+    using _timers = fakeTimers();
+    const container = document.createElement("div");
+    container.style.cssText = "width: 400px; height: 300px; display: flex;";
+    await using screen = await render(
+      <ServerBrowserSurface
+        environmentId={EnvironmentId.make("environment-copy")}
+        threadId="thread-copy"
+        tabId="tab-copy"
+        visible
+        className="flex-1"
+      />,
+      { container },
+    );
+    await vi.waitFor(() => expect(mocks.createClient).toHaveBeenCalled());
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    await expect.element(screen.getByText("Browser connection timed out.")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+    await vi.waitFor(() => expect(mocks.createClient).toHaveBeenCalledTimes(2));
   });
 });

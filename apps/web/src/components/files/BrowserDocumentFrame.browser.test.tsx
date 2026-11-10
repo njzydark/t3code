@@ -14,27 +14,45 @@ const sizeChanged = (height: number) => ({
 });
 
 describe("HtmlRenderDocument", () => {
-  it("reports the page's first height and ignores messages from other windows", async () => {
-    using pageUrl = (() => {
+  it.each(["direct", "relay"])(
+    "reports the %s page's first height and ignores messages from other windows",
+    async (connection) => {
       const page = `<script>parent.postMessage(${JSON.stringify(sizeChanged(321))}, "*");</script>`;
-      const url = URL.createObjectURL(new Blob([page], { type: "text/html" }));
-      return { url, [Symbol.dispose]: () => URL.revokeObjectURL(url) };
-    })();
-    const onContentHeight = vi.fn();
-    await using _screen = await render(
-      <HtmlRenderDocument src={pageUrl.url} title="Report" onContentHeight={onContentHeight} />,
-    );
+      using pageUrl = (() => {
+        const url = URL.createObjectURL(new Blob([page], { type: "text/html" }));
+        return { url, [Symbol.dispose]: () => URL.revokeObjectURL(url) };
+      })();
+      const relayUrl = `${location.origin}/__t3_relay/${"a".repeat(32)}/api/assets/report.html`;
+      using _fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(page, {
+          headers: { "content-type": "text/html" },
+        }),
+      );
+      const onContentHeight = vi.fn();
+      await using screen = await render(
+        <HtmlRenderDocument
+          src={connection === "relay" ? relayUrl : pageUrl.url}
+          title="Report"
+          onContentHeight={onContentHeight}
+        />,
+      );
 
-    await vi.waitFor(() => expect(onContentHeight).toHaveBeenCalledWith(321));
+      await vi.waitFor(() => expect(onContentHeight).toHaveBeenCalledWith(321));
+      expect(
+        (screen.getByTitle("Report").element() as HTMLIFrameElement).sandbox.contains(
+          "allow-same-origin",
+        ),
+      ).toBe(false);
 
-    // Listeners run in registration order, so once this one sees the message the frame's has too.
-    const delivered = new Promise<void>((resolve) =>
-      window.addEventListener("message", () => resolve(), { once: true }),
-    );
-    window.postMessage(sizeChanged(999), "*");
-    await delivered;
-    expect(onContentHeight).toHaveBeenCalledTimes(1);
-  });
+      // Listeners run in registration order, so once this one sees the message the frame's has too.
+      const delivered = new Promise<void>((resolve) =>
+        window.addEventListener("message", () => resolve(), { once: true }),
+      );
+      window.postMessage(sizeChanged(999), "*");
+      await delivered;
+      expect(onContentHeight).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("opens a clicked image with the other images of its block in the viewer", async () => {
     const swatch = (color: string) =>

@@ -228,6 +228,10 @@ export function PreviewView({
   }, [serverToolbarShown]);
   const [serverControlledTabId, setServerControlledTabId] = useState<string | null>(null);
   const serverInputDisabled = isServerTab && serverControlledTabId !== runtimeTabId;
+  const [serverNavigationBlockedTabId, setServerNavigationBlockedTabId] = useState<string | null>(
+    null,
+  );
+  const serverNavigationDisabled = isServerTab && serverNavigationBlockedTabId === runtimeTabId;
   const [serverFrameTabId, setServerFrameTabId] = useState<string | null>(null);
   // A desktop page that mounted before its tab went headless leaves its stale state here.
   const desktopOverlay =
@@ -255,9 +259,8 @@ export function PreviewView({
 
   /** Resolves to the profile of the tab that loaded the URL, or null when nothing opened. */
   const navigateToResolvedUrl = async (resolvedUrl: string) => {
-    if (isServerTab && serverSurfaceRef.current) {
-      if (serverInputDisabled) return null;
-      serverSurfaceRef.current.navigate(resolvedUrl);
+    if (isServerTab) {
+      if (serverNavigationDisabled || !serverSurfaceRef.current?.navigate(resolvedUrl)) return null;
       rememberPreviewUrl(threadRef, resolvedUrl);
       return activeProfileId;
     }
@@ -972,7 +975,7 @@ export function PreviewView({
         canGoBack={canGoBack && !serverInputDisabled}
         canGoForward={canGoForward && !serverInputDisabled}
         refreshDisabled={refreshDisabled || serverInputDisabled}
-        inputDisabled={serverInputDisabled}
+        inputDisabled={serverNavigationDisabled}
         urlInputRef={urlInputRef}
         onBack={handleBack}
         onForward={handleForward}
@@ -1056,10 +1059,7 @@ export function PreviewView({
               </div>
             ) : null}
             <div
-              className={cn(
-                "absolute inset-x-0 bottom-0",
-                (showEmptyState || isUnreachable) && "invisible",
-              )}
+              className="pointer-events-none absolute inset-x-0 bottom-0"
               style={{ top: viewport._tag !== "fill" ? BROWSER_DEVICE_TOOLBAR_HEIGHT : 0 }}
             >
               <ServerBrowserSurface
@@ -1075,12 +1075,20 @@ export function PreviewView({
                 }
                 visible={visible}
                 onFirstFrame={() => setServerFrameTabId(runtimeTabId)}
-                onControl={(control) =>
-                  setServerControlledTabId(control?.controller === "you" ? runtimeTabId : null)
-                }
+                onControl={(control) => {
+                  setServerControlledTabId(control?.controller === "you" ? runtimeTabId : null);
+                  setServerNavigationBlockedTabId(
+                    control && (!control.canOperate || control.controller !== "you")
+                      ? runtimeTabId
+                      : null,
+                  );
+                }}
                 onPopup={(popupTabId) => showPreviewPopup(threadRef, popupTabId, "panel")}
                 // Stays connected under the empty state so a URL picked there reaches the page.
-                className="absolute inset-0 h-full w-full"
+                className={cn(
+                  "pointer-events-auto absolute inset-0 h-full w-full",
+                  (showEmptyState || isUnreachable) && "invisible",
+                )}
               />
             </div>
           </>
