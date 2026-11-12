@@ -1,4 +1,5 @@
 import * as SelfHostedRelayHost from "./cloud/SelfHostedRelayHost.ts";
+import * as SelfHostedPush from "./relay/SelfHostedPush.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
@@ -1597,6 +1598,7 @@ export const layerWsRpc = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
       const selfHostedRelayHost = yield* SelfHostedRelayHost.SelfHostedRelayHost;
+      const selfHostedPush = yield* Effect.serviceOption(SelfHostedPush.SelfHostedPush);
       // Webhook URLs start agents; expose them only to operate-scoped sessions while keeping tasks readable.
       const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
         currentSession.scopes.includes(AuthOrchestrationOperateScope)
@@ -2723,6 +2725,10 @@ export const layerWsRpc = (
         [WS_METHODS.selfHostedRelayForget]: () => selfHostedRelayHost.forget,
         [WS_METHODS.selfHostedRelayPair]: (input) =>
           selfHostedRelayHost.pair(currentSession.scopes, input),
+        [WS_METHODS.selfHostedRelayPush]: (input) =>
+          Option.isSome(selfHostedPush)
+            ? selfHostedPush.value.request(currentSessionId, input)
+            : Effect.succeed({ enabled: false }),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) => relayClient.resolve,
         [WS_METHODS.cloudInstallRelayClient]: (_input) =>
           Stream.callback<RelayClientInstallProgressEvent, RelayClientInstallFailedError>((queue) =>

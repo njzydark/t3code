@@ -112,6 +112,7 @@ describe("command permissions", () => {
           [WS_METHODS.selfHostedRelayUpdate, AuthRelayWriteScope],
           [WS_METHODS.selfHostedRelayForget, AuthRelayWriteScope],
           [WS_METHODS.selfHostedRelayPair, AuthAccessWriteScope],
+          [WS_METHODS.selfHostedRelayPush, AuthOrchestrationReadScope],
         ] as const) {
           const command = createCommandPermissions(runtime, tag);
           registry.set(sessions(env), AsyncResult.success(grant(true)));

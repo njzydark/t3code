@@ -1,4 +1,5 @@
 mod broker;
+mod push;
 mod web;
 
 use std::{
@@ -60,11 +61,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let token = env::var("T3_RELAY_REGISTRATION_TOKEN")?;
     let shutdown = CancellationToken::new();
     let state = broker::Broker::new(&token, shutdown.clone())?;
+    let push = push::Push::from_env(&token)?;
     let web_root = match env::var_os("T3_RELAY_WEB_ROOT") {
         Some(path) => Some(tokio::fs::canonicalize(PathBuf::from(path)).await?),
         None => None,
     };
-    let app = Router::new()
+    let mut app = Router::new()
         .route(
             "/healthz",
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
@@ -74,6 +76,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(web_root))
         .layer(middleware::from_fn(web::security_headers))
         .with_state(state.clone());
+    if let Some(push) = push {
+        app = app.merge(push.router());
+        state.tasks.spawn(push.run(shutdown.clone()));
+    }
     let listener = TcpListener::bind(bind_address()?).await?;
     println!(
         "T3 self-hosted relay listening on http://{}",

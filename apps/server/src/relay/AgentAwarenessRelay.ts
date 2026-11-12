@@ -75,7 +75,7 @@ function isTurnItemPayload(
   );
 }
 
-function shouldPublishAgentAwarenessEvent(
+export function shouldPublishAgentAwarenessEvent(
   event: Pick<OrchestrationV2DomainEvent, "type"> & { readonly payload?: unknown },
 ): boolean {
   if (
@@ -312,7 +312,7 @@ const waitingApprovalId = (thread: AgentAwarenessThread | null) =>
     ? thread.pendingRuntimeRequest?.id
     : undefined;
 
-function resolveAgentAwarenessRelayPublishSnapshot(input: {
+export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly environmentId: EnvironmentId;
   readonly thread: Option.Option<AgentAwarenessThread>;
   readonly project: Option.Option<Project>;

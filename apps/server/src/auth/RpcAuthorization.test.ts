@@ -83,6 +83,9 @@ describe("RPC authorization scopes", () => {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthRelayWriteScope);
     }
     expect(requiredScopeForRpcMethod(WS_METHODS.selfHostedRelayPair)).toBe(AuthAccessWriteScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.selfHostedRelayPush)).toBe(
+      AuthOrchestrationReadScope,
+    );
   });
 
   it("rejects unknown RPC method names", () => {

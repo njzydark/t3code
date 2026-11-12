@@ -1,4 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
+import { SelfHostedPushSettingsSection } from "../selfhosted-push/SettingsSection";
+import { hasSelfHostedPushTargetsAtom } from "../selfhosted-push/runtime";
 import {
   AuthRelayWriteScope,
   managedCapabilityDenial,
@@ -109,6 +111,7 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
+  const hasSelfHostedTargets = useAtomValue(hasSelfHostedPushTargetsAtom);
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsScreen title="Notifications">
@@ -116,9 +119,13 @@ export function SettingsNotificationsRouteScreen() {
           contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="px-5 pt-4"
         >
-          <Text className="text-base text-foreground-muted">
-            Notifications require T3 Connect in this app build.
-          </Text>
+          {hasSelfHostedTargets && Platform.OS === "ios" ? (
+            <SelfHostedPushSettingsSection />
+          ) : (
+            <Text className="text-base text-foreground-muted">
+              Notifications require T3 Connect in this app build.
+            </Text>
+          )}
         </ScrollView>
       </SettingsScreen>
     );
@@ -422,6 +429,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <SelfHostedPushSettingsSection />
         <SettingsSection title="Agent activity">
           <SettingsSwitchRow
             icon="bell.badge"

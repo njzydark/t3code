@@ -15,6 +15,8 @@ import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
+import { useAtomValue } from "@effect/atom-react";
+import { hasSelfHostedPushTargetsAtom } from "../selfhosted-push/runtime";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
@@ -162,9 +164,22 @@ function ConfiguredSettingsRouteScreen() {
 function LocalSettingsRouteScreen() {
   const gt = useGT();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const hasSelfHostedTargets = useAtomValue(hasSelfHostedPushTargetsAtom);
   return (
     <SettingsList
-      connections={[environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length)]}
+      connections={[
+        environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length),
+        ...(hasSelfHostedTargets && Platform.OS === "ios"
+          ? [
+              {
+                id: "SettingsNotifications",
+                icon: "bell.badge" as const,
+                label: gt("Notifications"),
+                target: "SettingsNotifications" as const,
+              },
+            ]
+          : []),
+      ]}
     />
   );
 }

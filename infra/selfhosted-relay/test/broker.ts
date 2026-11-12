@@ -31,6 +31,7 @@ export async function createRelayBroker(input: {
     T3_RELAY_REGISTRATION_TOKEN: input.registrationToken,
   };
   delete env.T3_RELAY_WEB_ROOT;
+  delete env.T3_RELAY_PUSH_ENABLED;
   if (input.webRoot) env.T3_RELAY_WEB_ROOT = input.webRoot;
   const child = NodeChildProcess.spawn(executable, [], { env, stdio: ["ignore", "pipe", "pipe"] });
   const exited = new Promise<void>((resolve, reject) => {

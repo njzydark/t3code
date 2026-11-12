@@ -108,6 +108,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.selfHostedRelayUpdate]: "selfHostedRelay",
   [WS_METHODS.selfHostedRelayForget]: "selfHostedRelay",
   [WS_METHODS.selfHostedRelayPair]: "selfHostedRelay",
+  [WS_METHODS.selfHostedRelayPush]: "selfHostedRelay",
   [WS_METHODS.cloudGetRelayClientStatus]: "cloud",
   [WS_METHODS.cloudInstallRelayClient]: "cloud",
   [WS_METHODS.pullRequestsList]: "pull-requests",

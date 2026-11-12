@@ -1,4 +1,5 @@
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
+import { installSelfHostedPush } from "./features/selfhosted-push/runtime";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
 import * as Linking from "expo-linking";
@@ -181,6 +182,7 @@ function handleNavigationReady(): void {
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
 const appServiceDisposers = [
+  installSelfHostedPush(),
   installUiRuntimeMemoryWarningGc(),
   subscribeComposerDraftModelReconciliation({
     registry: appAtomRegistry,

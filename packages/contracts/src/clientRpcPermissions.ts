@@ -22,6 +22,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.selfHostedRelayUpdate]: AuthRelayWriteScope,
   [WS_METHODS.selfHostedRelayForget]: AuthRelayWriteScope,
   [WS_METHODS.selfHostedRelayPair]: AuthAccessWriteScope,
+  [WS_METHODS.selfHostedRelayPush]: AuthOrchestrationReadScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,

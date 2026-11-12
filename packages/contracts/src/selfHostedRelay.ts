@@ -1,5 +1,42 @@
 import * as Schema from "effect/Schema";
 import { AuthPairingCredentialResult } from "./auth.ts";
+import { RelayAgentActivityAggregateState, RelayDeviceRegistrationRequest } from "./relay.ts";
+
+export const SelfHostedPushRequest = Schema.Union([
+  Schema.Struct({ operation: Schema.Literal("capabilities") }),
+  Schema.Struct({
+    operation: Schema.Literal("register"),
+    registration: RelayDeviceRegistrationRequest,
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("activity"),
+    deviceId: Schema.String,
+    activityPushToken: Schema.String,
+  }),
+  Schema.Struct({ operation: Schema.Literal("unregister"), deviceId: Schema.String }),
+  Schema.Struct({ operation: Schema.Literal("snapshot"), deviceId: Schema.String }),
+]);
+export type SelfHostedPushRequest = typeof SelfHostedPushRequest.Type;
+export const SelfHostedPushResponse = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  bundleId: Schema.optional(Schema.String),
+  apsEnvironment: Schema.optional(Schema.Literals(["sandbox", "production"])),
+  aggregate: Schema.optional(Schema.NullOr(RelayAgentActivityAggregateState)),
+  ok: Schema.optional(Schema.Boolean),
+});
+export type SelfHostedPushResponse = typeof SelfHostedPushResponse.Type;
+export class SelfHostedPushError extends Schema.TaggedError<SelfHostedPushError>()(
+  "SelfHostedPushError",
+  {
+    operation: Schema.Literals(["configuration", "request", "registration"]),
+    status: Schema.optional(Schema.Number),
+    cause: Schema.Defect(),
+  },
+) {
+  override get message() {
+    return "The self-hosted push service is unavailable or does not match this app's push identity.";
+  }
+}
 
 export const SelfHostedRelayStatus = Schema.Struct({
   relayUrl: Schema.String,

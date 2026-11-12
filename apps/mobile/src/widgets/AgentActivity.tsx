@@ -52,7 +52,7 @@ export interface AgentActivityProps {
 }
 
 // Widget serialization excludes module helpers; use only imported view/modifier factories.
-function AgentActivity(
+export function AgentActivity(
   props: AgentActivityProps,
   environment: LiveActivityEnvironment,
 ): LiveActivityLayout {

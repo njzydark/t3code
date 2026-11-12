@@ -20,6 +20,7 @@ import { useWorkspaceEnvironments } from "../../state/workspace";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { relayManagedEnvironmentIds } from "./environmentSections";
+import { unregisterSelfHostedPush } from "../selfhosted-push/runtime";
 
 export interface RelayEnvironmentView {
   readonly environment: RelayClientEnvironmentRecord;
@@ -82,12 +83,16 @@ export function useConnectionController() {
         }),
       }),
     );
-  const removeEnvironment = (environmentId: EnvironmentId) =>
-    removeEnvironmentMutation(environmentId);
+  const removeEnvironment = async (environmentId: EnvironmentId) => {
+    await unregisterSelfHostedPush(environmentId);
+    return removeEnvironmentMutation(environmentId);
+  };
   const retryEnvironment = (environmentId: EnvironmentId) =>
     retryEnvironmentMutation(environmentId);
-  const setEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
-    setEnvironmentEnabledMutation({ environmentId, enabled });
+  const setEnvironmentEnabled = async (environmentId: EnvironmentId, enabled: boolean) => {
+    if (!enabled) await unregisterSelfHostedPush(environmentId);
+    return setEnvironmentEnabledMutation({ environmentId, enabled });
+  };
   const updateEnvironment = (
     environmentId: EnvironmentId,
     updates: { readonly label: string; readonly displayUrl: string },
