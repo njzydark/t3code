@@ -23,6 +23,7 @@ async function fixture() {
   const broker = await createRelayBroker({ registrationToken: TOKEN });
   const relayUrl = broker.url;
   const uploads: Uint8Array[] = [];
+  const connections = new Set<NodeNet.Socket>();
   let cancelStarted!: () => void;
   let cancelClosed!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -64,6 +65,7 @@ async function fixture() {
       else response.end();
     }
   });
+  http.on("connection", (socket) => connections.add(socket));
   const ws = new WebSocketServer({ server: http });
   ws.on("connection", (socket) => {
     socket.send("relay-welcome");
@@ -96,6 +98,7 @@ async function fixture() {
     address,
     started,
     cancelled,
+    connections,
     async [Symbol.asyncDispose]() {
       client.dispose();
       controller.abort();
@@ -138,6 +141,10 @@ describe("self-hosted encrypted relay", () => {
     expect(new Uint8Array(await large.arrayBuffer())).toEqual(
       new Uint8Array(2 * 1024 * 1024).fill(23),
     );
+    expect(
+      test.connections.size,
+      "sequential requests reuse the host HTTP connection",
+    ).toBeLessThanOrEqual(2);
     test.client.disconnect(test.address.route);
     const reconnected = await test.client.fetch(`${test.endpoint}/file`, {
       headers: { authorization: "Bearer t3-session" },

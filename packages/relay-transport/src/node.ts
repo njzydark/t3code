@@ -98,7 +98,12 @@ function responseHeaders(response: NodeHttp.IncomingMessage) {
   });
 }
 
-async function proxyHttp(stream: RelayStream, metadata: Record<string, unknown>, origin: URL) {
+async function proxyHttp(
+  stream: RelayStream,
+  metadata: Record<string, unknown>,
+  origin: URL,
+  agent: NodeHttp.Agent,
+) {
   const target = requestTarget(origin, metadata.path);
   if (
     typeof metadata.method !== "string" ||
@@ -109,7 +114,7 @@ async function proxyHttp(stream: RelayStream, metadata: Record<string, unknown>,
   const request = NodeHttp.request(target, {
     method: metadata.method,
     headers: filteredHeaders(metadata.headers),
-    agent: false,
+    agent,
   });
   const abort = () => request.destroy(new Error("Relay request cancelled."));
   stream.signal.addEventListener("abort", abort, { once: true });
@@ -160,8 +165,8 @@ async function proxyHttp(stream: RelayStream, metadata: Record<string, unknown>,
     await upload;
   } finally {
     stream.signal.removeEventListener("abort", abort);
-    request.destroy();
-    response?.destroy();
+    if (!request.writableFinished || !response?.complete) request.destroy();
+    if (!response?.complete) response?.destroy();
   }
 }
 
@@ -303,7 +308,14 @@ export async function connectHost(input: {
     nodeSocket,
     input.signal,
   );
+  const agent = new NodeHttp.Agent({
+    keepAlive: true,
+    maxSockets: 64,
+    maxFreeSockets: 8,
+    scheduling: "lifo",
+  });
   const close = () => {
+    agent.destroy();
     socket.close();
     for (const session of sessions) session.abort();
     for (const channel of channels) channel.close();
@@ -330,7 +342,7 @@ export async function connectHost(input: {
       });
       const channel = new RelayChannel(wire, (stream, metadata) => {
         if (!isRecord(metadata)) return Promise.reject(new Error("Invalid relay stream."));
-        if (metadata.type === "http") return proxyHttp(stream, metadata, origin);
+        if (metadata.type === "http") return proxyHttp(stream, metadata, origin, agent);
         if (metadata.type === "websocket") return proxyWebSocket(stream, metadata, origin);
         return Promise.reject(new Error("Unknown relay stream type."));
       });
