@@ -145,7 +145,7 @@ independent public download link. Remote HTML documents are sandboxed. This
 mode does not publish arbitrary local development ports or rewrite arbitrary
 websites' absolute URLs.
 
-T3 Connect account discovery, cloud notifications, guest-link hosting and
+T3 Connect account discovery, guest-link hosting and
 cloud webhook delivery still depend on their existing services. This relay
 does not replace WebRTC signaling, STUN or TURN infrastructure. Device media
 and browser previews that rely on those separate paths need their existing
@@ -155,3 +155,65 @@ system's suspension rules.
 Web, Electron and native resource handling have separate adapters. Protocol
 tests and TypeScript checks alone do not establish complete feature parity;
 verify the clients you distribute against your relay.
+
+## Optional iOS push
+
+The Relay can optionally deliver iOS agent notifications and update Live
+Activities without T3 Connect. Push is off by default, and enabling it does not
+change official Connect notifications. Android notifications still use their
+existing service.
+
+An environment already publishing notifications through T3 Connect keeps using
+Connect, avoiding duplicate deliveries. Disable its Connect notification
+publication before switching that environment to self-hosted push.
+
+You need an APNs signing key (`.p8`), its Key ID, your Apple developer Team ID,
+and the Bundle ID of the iOS app you distribute. The app must be signed under
+that Apple team with push notifications enabled. An app-signing `.p12` and a
+provisioning profile alone are not APNs sending credentials. Unrelated keys
+cannot send notifications to the official App Store app.
+
+For Compose deployments, set `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_BUNDLE_ID`, and
+`APNS_PRIVATE_KEY_FILE` (the local path to the `.p8`), then apply the optional
+override from the Relay directory:
+
+```bash
+docker compose -f compose.yaml -f compose.push.yaml up -d
+```
+
+Add `--profile tls` if using the supplied Caddy service. The key must be readable
+by the Relay's container user (UID 65532); keep its host directory private and
+mount it read-only. Use `APNS_ENVIRONMENT=sandbox` for development-signed app
+builds, or `production` for distribution builds. Mismatched app identities or
+environments are rejected during device registration.
+
+Without Compose, set `T3_RELAY_PUSH_ENABLED=true`, `APNS_TEAM_ID`, `APNS_KEY_ID`,
+`APNS_BUNDLE_ID`, `APNS_ENVIRONMENT`, `APNS_PRIVATE_KEY_FILE`, and
+`T3_RELAY_PUSH_DATABASE`. The database must be in a persistent writable directory;
+its registrations and pending deliveries survive Relay restarts. Restrict access
+to this directory: it holds device tokens and notification metadata.
+
+Connect the environment using **Settings > Sharing & access > Self-hosted
+relay**, then pair the forked iOS app with its pairing link. The host uses its
+existing Relay configuration to publish notification state. A standalone
+`t3 relay connect` process does not configure the host's notification service.
+On iOS, open **Settings > Notifications > Self-hosted Relay** to grant notification
+access or turn off self-hosted notifications and Live Activities independently
+of Connect. This requires the forked client that implements this feature;
+installing an unchanged official app does not add it.
+
+Like the current Connect implementation, Live Activities are started while the
+app is in the foreground, then updated and ended through APNs in the background.
+Remote push-to-start is not implemented. Keep the host running to publish task
+changes. Delivery is subject to iOS notification permissions, Live Activity
+settings, network availability, and Apple's delivery policy; it is not guaranteed.
+
+The optional push service receives agent titles, state, device tokens, and the
+environment/session identifiers needed for delivery. Unlike the encrypted
+connection transport, this metadata is readable by the Relay operator and Apple.
+Use a Relay operator you trust. Removing a paired client on the host revokes its
+notification registration as well. Detaching a connection or switching backends
+attempts to clean up old registrations. An offline backend cannot confirm cleanup;
+do not treat local connection removal as server-side revocation.
+Back up the push-data volume and retain the
+APNs key; do not include either in a public image.
