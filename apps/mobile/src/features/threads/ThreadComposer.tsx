@@ -41,6 +41,7 @@ import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
+import { armSelfHostedLiveActivityForLocalWork } from "../selfhosted-push/runtime";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
   getComposerDraftSnapshot,
@@ -590,6 +591,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       threadTitle: props.selectedThread.title,
       projectTitle: props.environmentLabel ?? "T3 Code",
     });
+    armSelfHostedLiveActivityForLocalWork(props.environmentId);
   };
 
   const nativeImageSubmit = useSubmitAfterNativeImages({

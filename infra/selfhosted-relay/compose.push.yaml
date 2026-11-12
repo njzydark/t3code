@@ -1,0 +1,19 @@
+services:
+  relay:
+    environment:
+      T3_RELAY_PUSH_ENABLED: "true"
+      T3_RELAY_PUSH_DATABASE: /push-data/push.sqlite
+      APNS_PRIVATE_KEY_FILE: /run/secrets/apns-private-key
+      APNS_TEAM_ID: ${APNS_TEAM_ID:?Set the Apple developer Team ID}
+      APNS_KEY_ID: ${APNS_KEY_ID:?Set the APNs signing key ID}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:?Set the signed app bundle identifier}
+      APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-production}
+    volumes:
+      - push-data:/push-data
+    secrets:
+      - apns-private-key
+secrets:
+  apns-private-key:
+    file: ${APNS_PRIVATE_KEY_FILE:?Set the local path to your APNs .p8 key}
+volumes:
+  push-data:

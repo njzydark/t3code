@@ -30,15 +30,11 @@ import * as SelfHostedRelay from "./SelfHostedRelay.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { allowsRemoteClients } from "../policy/managedLimits.ts";
+import {
+  SELF_HOSTED_RELAY_CONFIG_SECRET as CONFIG_SECRET,
+  StoredSelfHostedRelayConfig as StoredConfig,
+} from "./selfHostedRelayConfig.ts";
 
-const CONFIG_SECRET = "self-hosted-relay";
-const StoredConfig = Schema.fromJsonString(
-  Schema.Struct({
-    relayUrl: Schema.String,
-    registrationToken: Schema.String,
-    enabled: Schema.Boolean,
-  }),
-);
 type StoredConfig = typeof StoredConfig.Type;
 const encodeStoredConfig = Schema.encodeEffect(StoredConfig);
 const decodeStoredConfig = Schema.decodeEffect(StoredConfig);
