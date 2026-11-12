@@ -8,7 +8,8 @@
     "./secure": "./src/secure.ts",
     "./network": "./src/network.ts",
     "./local-bridge": "./src/localBridge.ts",
-    "./node": "./src/node.ts"
+    "./node": "./src/node.ts",
+    "./tunnel": "./src/tunnel.ts"
   },
   "scripts": {
     "typecheck": "effect-tsgo tsrs --noEmit",

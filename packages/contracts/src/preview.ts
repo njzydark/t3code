@@ -404,3 +404,17 @@ export const PreviewError = Schema.Union([
   PreviewControlRequiredError,
 ]);
 export type PreviewError = typeof PreviewError.Type;
+
+export const PreviewTunnelTarget = Schema.Struct({
+  hostname: Schema.Literals(["127.0.0.1", "localhost", "::1"]),
+  port: PositiveInt.check(Schema.isLessThanOrEqualTo(65535)),
+});
+export type PreviewTunnelTarget = typeof PreviewTunnelTarget.Type;
+
+export const PreviewTunnelGrant = Schema.Struct({ token: Schema.String, expiresAt: Schema.Number });
+export class PreviewTunnelError extends Schema.TaggedError<PreviewTunnelError>()(
+  "PreviewTunnelError",
+  {
+    message: Schema.String,
+  },
+) {}

@@ -71,6 +71,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as MacPermissions from "../permissions/MacPermissions.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as BrowserTunnels from "../preview/BrowserTunnels.ts";
 
 it.effect.each([false, true])(
   "stops backends together before flushing history and cancels Linux registration, stop defect=%s",
@@ -232,6 +233,7 @@ it.effect.each([false, true])(
             Layer.mock(DesktopWslEnvironment.DesktopWslEnvironment, {}),
             Layer.mock(ElectronMenu.ElectronMenu, {}),
             Layer.mock(ElectronShell.ElectronShell, {}),
+            Layer.mock(BrowserTunnels.BrowserTunnels, {}),
             Layer.mock(ElectronTheme.ElectronTheme, {}),
             Layer.mock(ElectronWindow.ElectronWindow, {}),
             Layer.mock(MacPermissions.MacPermissions, {}),

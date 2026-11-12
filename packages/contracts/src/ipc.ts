@@ -1045,6 +1045,16 @@ export type DesktopMediaRead = typeof DesktopMediaReadSchema.Type;
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const DesktopBrowserTunnelInput = Schema.Struct({
+  url: Schema.String,
+  wsUrl: Schema.String,
+  expiresAt: Schema.Number,
+  relay: Schema.optionalKey(
+    Schema.Struct({ relayUrl: Schema.String, route: Schema.String, peerId: Schema.String }),
+  ),
+});
+export type DesktopBrowserTunnelInput = typeof DesktopBrowserTunnelInput.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
@@ -1137,6 +1147,7 @@ export interface DesktopBridge {
   receiveProviderAuthCallback: (authorizationUrl: string) => Promise<string>;
   cancelProviderAuthCallback: (authorizationUrl: string) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
+  openBrowserTunnel: (input: DesktopBrowserTunnelInput) => Promise<boolean>;
   /** Reads http(s) media in the main process, outside renderer CORS and CSP; null on network failure. */
   readMedia: (url: string) => Promise<DesktopMediaRead | null>;
   openSystemSettings: (pane: SystemSettingsPane) => Promise<boolean>;

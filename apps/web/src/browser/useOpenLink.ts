@@ -4,7 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { recordVisitForThread } from "~/browserHistoryStore";
-import { readLocalApi } from "~/localApi";
+import { openExternalLink } from "./openExternalLink";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -49,8 +49,6 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       if (isBrowserSettingsReadError(failure)) throw failure;
       console.error(result.cause);
     }
-    const api = readLocalApi();
-    if (!api) throw new Error("Link opening is unavailable.");
-    await api.shell.openExternal(url);
+    await openExternalLink(url, targetThreadRef?.environmentId);
   };
 }

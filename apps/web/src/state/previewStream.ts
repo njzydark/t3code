@@ -15,16 +15,22 @@ import { environmentSession } from "./session";
 
 const ACCESS_RETRY_INTERVAL_MS = 10_000;
 
-const previewStreamAccessAtom = Atom.family((environmentId: EnvironmentId) =>
+const makeAccessAtom = (environmentId: EnvironmentId, hubBasePath: string) =>
   connectionAtomRuntime
     .atom((get) => {
       const prepared = Option.getOrNull(
         get(environmentSession.preparedConnectionValueAtom(environmentId)),
       );
       if (prepared === null) return Effect.never;
-      return resolveDeviceHubAccess({ prepared, hubBasePath: PREVIEW_STREAM_BASE_PATH });
+      return resolveDeviceHubAccess({ prepared, hubBasePath });
     })
-    .pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`preview-stream-access:${environmentId}`)),
+    .pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`${hubBasePath}-access:${environmentId}`));
+
+const previewStreamAccessAtom = Atom.family((environmentId: EnvironmentId) =>
+  makeAccessAtom(environmentId, PREVIEW_STREAM_BASE_PATH),
+);
+const previewTunnelAccessAtom = Atom.family((environmentId: EnvironmentId) =>
+  makeAccessAtom(environmentId, "/api/preview-tunnel"),
 );
 
 // Only a surface the user is looking at retries a failed lookup; one-shot readers such as
@@ -63,6 +69,19 @@ export function readPreviewStreamAccess(
 ): Promise<DeviceHubAccess | null> {
   const atom = previewStreamAccessAtom(environmentId);
   if (refresh) appAtomRegistry.refresh(atom);
+  return Effect.runPromise(
+    AtomRegistry.getResult(appAtomRegistry, atom, { suspendOnWaiting: true }).pipe(
+      Effect.timeout("10 seconds"),
+      Effect.orElseSucceed(() => null),
+    ),
+  );
+}
+
+export function readPreviewTunnelAccess(
+  environmentId: EnvironmentId,
+): Promise<DeviceHubAccess | null> {
+  const atom = previewTunnelAccessAtom(environmentId);
+  appAtomRegistry.refresh(atom);
   return Effect.runPromise(
     AtomRegistry.getResult(appAtomRegistry, atom, { suspendOnWaiting: true }).pipe(
       Effect.timeout("10 seconds"),

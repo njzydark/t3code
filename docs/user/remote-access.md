@@ -265,6 +265,21 @@ On a phone, tap the floating preview's corner dot to show its controls, then
 **Pop into separate window** to keep watching in picture-in-picture over other
 apps.
 
+### Open a remote service in your system browser
+
+In the desktop app, **Open in browser** forwards a remote environment's HTTP
+`localhost` or `127.0.0.1` service to your computer before opening it. This also
+applies to thread links configured to open in your system browser. With a
+self-hosted relay, traffic uses its encrypted connection; the service is not
+published on the relay's public address.
+
+Keep T3 Code running while using the forwarded page. A forwarding session lasts
+up to one hour; open the link from T3 Code again to renew it. Your system browser
+uses its own cookies and sign-in, separate from the agent's browser. Relative
+links and same-origin WebSockets work; hardcoded host URLs, separate service
+ports and HTTPS services may need their own network setup. Browser and mobile
+clients can continue using the host's streamed Browser instead.
+
 ### Local servers
 
 The browser lists ports held by processes your terminals and agents started.

@@ -42,6 +42,7 @@ import {
   updatePreviewServerSnapshot,
   useThreadPreviewState,
 } from "~/previewStateStore";
+import { openExternalLink } from "~/browser/openExternalLink";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
@@ -435,7 +436,12 @@ export function PreviewView({
 
   const handleOpenInBrowser = () => {
     if (!localApi || !url) return;
-    void localApi.shell.openExternal(url).catch(() => undefined);
+    void openExternalLink(url, threadRef.environmentId).catch((error: unknown) => {
+      toastManager.add({
+        type: "error",
+        title: error instanceof Error ? error.message : "Unable to open browser",
+      });
+    });
   };
 
   const moveTarget = alternatePreviewRuntime(

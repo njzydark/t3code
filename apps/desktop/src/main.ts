@@ -31,6 +31,7 @@ import * as ElectronPowerMonitor from "./electron/ElectronPowerMonitor.ts";
 import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "./electron/ElectronSafeStorage.ts";
 import * as ElectronShell from "./electron/ElectronShell.ts";
+import * as BrowserTunnels from "./preview/BrowserTunnels.ts";
 import * as ElectronTheme from "./electron/ElectronTheme.ts";
 import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
@@ -144,6 +145,7 @@ const layerElectron = Layer.mergeAll(
 );
 
 const layerDesktopFoundation = Layer.mergeAll(
+  BrowserTunnels.layer.pipe(Layer.provide(ElectronShell.layer)),
   MacPermissions.layer,
   DesktopManagedPolicy.layer,
   DesktopState.layer,

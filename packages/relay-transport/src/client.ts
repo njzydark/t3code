@@ -133,6 +133,10 @@ export class EncryptedRelayClient {
     }
   }
 
+  addressForRoute(route: string): RelayAddress | undefined {
+    return this.addresses.get(route);
+  }
+
   hasRoute(route: string) {
     return this.addresses.has(route);
   }

@@ -1,5 +1,6 @@
 import {
   ContextMenuItemSchema,
+  DesktopBrowserTunnelInput,
   DesktopAppBrandingSchema,
   DesktopEnvironmentBootstrapSchema,
   DesktopMediaReadSchema,
@@ -37,6 +38,7 @@ import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
+import * as BrowserTunnels from "../../preview/BrowserTunnels.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as Electron from "electron";
@@ -559,5 +561,14 @@ export const checkSystemPermission = DesktopIpc.makeIpcMethod({
     if (environment.platform !== "darwin") return false;
     const check = yield* safariPermissionCheck;
     return yield* Effect.promise(check);
+  }),
+});
+
+export const openBrowserTunnel = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.OPEN_BROWSER_TUNNEL_CHANNEL,
+  payload: DesktopBrowserTunnelInput,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.openBrowserTunnel")(function* (input) {
+    return yield* (yield* BrowserTunnels.BrowserTunnels).open(input);
   }),
 });
