@@ -1,15 +1,17 @@
 FROM rust:1.90-alpine AS builder
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev make
 WORKDIR /build
 COPY infra/selfhosted-relay/Cargo.toml infra/selfhosted-relay/Cargo.lock ./
 COPY infra/selfhosted-relay/src/*.rs ./src/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --locked --release && cp target/release/t3-selfhosted-relay /t3-selfhosted-relay
+RUN mkdir -m 700 /push-data
 
 FROM scratch AS core
 COPY --from=builder /t3-selfhosted-relay /t3-selfhosted-relay
 COPY LICENSE /LICENSE
+COPY --from=builder --chown=65532:65532 /push-data /push-data
 USER 65532:65532
 ENV HOST=0.0.0.0 PORT=8788
 EXPOSE 8788

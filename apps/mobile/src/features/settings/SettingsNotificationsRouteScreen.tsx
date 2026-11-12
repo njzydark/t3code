@@ -2,6 +2,8 @@ import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { msg, useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
+import { SelfHostedPushSettingsSection } from "../selfhosted-push/SettingsSection";
+import { hasSelfHostedPushTargetsAtom } from "../selfhosted-push/runtime";
 import {
   AuthRelayConfigureScope,
   AuthRelayWriteScope,
@@ -189,6 +191,7 @@ function useNotificationsReady(): boolean {
 
 export function SettingsNotificationsRouteScreen() {
   const gt = useGT();
+  const hasSelfHostedTargets = useAtomValue(hasSelfHostedPushTargetsAtom);
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsScreen title={gt("Notifications")}>
@@ -196,9 +199,13 @@ export function SettingsNotificationsRouteScreen() {
           contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="px-5 pt-4"
         >
-          <Text className="text-base text-foreground-muted">
-            {gt("Notifications require {product} in this app build.", { product: "T3 Connect" })}
-          </Text>
+          {hasSelfHostedTargets && Platform.OS === "ios" ? (
+            <SelfHostedPushSettingsSection />
+          ) : (
+            <Text className="text-base text-foreground-muted">
+              {gt("Notifications require {product} in this app build.", { product: "T3 Connect" })}
+            </Text>
+          )}
         </ScrollView>
       </SettingsScreen>
     );
@@ -562,6 +569,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <SelfHostedPushSettingsSection />
         <SettingsSection title={gt("Agent activity")}>
           <SettingsSwitchRow
             icon="bell.badge"
