@@ -68,3 +68,12 @@ Host identity and T3 data stay on the host. Traffic is encrypted between host
 and client, but browsers must trust the operator serving their web app.
 Read the [trust and compatibility limits](../../docs/user/self-hosted-relay.md#trust-and-compatibility)
 before exposing the service.
+
+## Optional iOS push service
+
+Push is disabled by default. To enable iOS notifications and Live Activity updates,
+use the [push setup guide](../../docs/user/self-hosted-relay.md#optional-ios-push).
+The optional [Compose override](compose.push.yaml) adds APNs credentials and a
+persistent push-data volume to the same Rust Relay container. It does not use
+Expo, Clerk, or the official Connect push service. Android push is not supported
+by this optional module.
