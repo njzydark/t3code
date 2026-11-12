@@ -108,6 +108,7 @@ describe("ConnectionDriver self-hosted relay recovery", () => {
             authorizeDpop: unused,
             authorizeDpopHttp: unused,
             renewDpopBeforeExpiry: unused,
+            rememberCheckedDescriptor: () => Effect.void,
           }),
           RpcHttp.layerRemoteHttpClient(() => Promise.reject(new Error("Unexpected HTTP probe."))),
         );
