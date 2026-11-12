@@ -4,6 +4,9 @@ import {
   SelfHostedRelayPairResult,
   SelfHostedRelayUpdate,
   SelfHostedRelayOperationError,
+  SelfHostedPushRequest,
+  SelfHostedPushResponse,
+  SelfHostedPushError,
 } from "./selfHostedRelay.ts";
 import {
   OrchestrationV2SearchThreadError,
@@ -666,6 +669,7 @@ export const WS_METHODS = {
   selfHostedRelayUpdate: "selfHostedRelay.update",
   selfHostedRelayForget: "selfHostedRelay.forget",
   selfHostedRelayPair: "selfHostedRelay.pair",
+  selfHostedRelayPush: "selfHostedRelay.push",
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
 
@@ -1224,6 +1228,11 @@ const WsSelfHostedRelayPairRpc = Rpc.make(WS_METHODS.selfHostedRelayPair, {
   payload: AuthCreatePairingCredentialInput,
   success: SelfHostedRelayPairResult,
   error: selfHostedRelayError,
+});
+const WsSelfHostedRelayPushRpc = Rpc.make(WS_METHODS.selfHostedRelayPush, {
+  payload: SelfHostedPushRequest,
+  success: SelfHostedPushResponse,
+  error: Schema.Union([SelfHostedPushError, EnvironmentAuthorizationError]),
 });
 
 const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
@@ -2601,6 +2610,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSelfHostedRelayUpdateRpc,
   WsSelfHostedRelayForgetRpc,
   WsSelfHostedRelayPairRpc,
+  WsSelfHostedRelayPushRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

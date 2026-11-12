@@ -143,6 +143,8 @@ export interface Preferences {
   readonly pullRequestActivityVisibility?: PullRequestActivityVisibility;
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
   readonly liveActivitiesEnabled?: boolean;
+  readonly selfHostedPushEnabled?: boolean;
+  readonly selfHostedLiveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
@@ -236,6 +238,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     pullRequestActivityVisibility?: PullRequestActivityVisibility;
     pullRequestMergeMethod?: PullRequestMergeMethod;
     liveActivitiesEnabled?: boolean;
+    selfHostedPushEnabled?: boolean;
+    selfHostedLiveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
@@ -303,6 +307,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
   }
+  if (typeof parsed.selfHostedPushEnabled === "boolean")
+    preferences.selfHostedPushEnabled = parsed.selfHostedPushEnabled;
+  if (typeof parsed.selfHostedLiveActivitiesEnabled === "boolean")
+    preferences.selfHostedLiveActivitiesEnabled = parsed.selfHostedLiveActivitiesEnabled;
   if (
     typeof parsed.themeId === "string" &&
     (MOBILE_THEME_IDS as readonly string[]).includes(parsed.themeId)
