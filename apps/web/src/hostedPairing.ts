@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "./i18n/messages";
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
@@ -57,7 +59,7 @@ export function readHostedPairingRequest(url: URL = new URL(window.location.href
       return {
         host: relay.relayUrl,
         token: relay.token,
-        label: "Self-hosted relay environment",
+        label: m(msg("Self-hosted relay environment")),
         pairingUrl: url.href,
       } satisfies HostedPairingRequest;
   } catch {

@@ -191,6 +191,7 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
   let closeCode = 1000;
   let closeReason = "";
   let opened = false;
+  let rejected = false;
   const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
   try {
     const opening = new Promise<void>((resolve, reject) => {
@@ -201,6 +202,17 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
           socket.terminate();
           stream.cancel();
         });
+        resolve();
+      });
+      socket.once("unexpected-response", (_request, response) => {
+        rejected = true;
+        output = stream
+          .head({
+            open: false,
+            status: response.statusCode ?? 502,
+            headers: responseHeaders(response),
+          })
+          .then(() => stream.end());
         resolve();
       });
       socket.once("error", reject);
@@ -234,6 +246,7 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
       });
     });
     socket.once("close", (code, reason) => {
+      if (!opened) return;
       output = output.then(async () => {
         await stream.head({ closeCode: code, closeReason: reason.toString() });
         await stream.end();
@@ -241,6 +254,10 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
       void output.catch(() => stream.cancel());
     });
     await opening;
+    if (rejected) {
+      await output;
+      return;
+    }
     await readSocketMessages(
       stream,
       (bytes, binary) =>

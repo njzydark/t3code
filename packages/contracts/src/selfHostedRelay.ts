@@ -2,6 +2,13 @@ import * as Schema from "effect/Schema";
 import { AuthPairingCredentialResult } from "./auth.ts";
 import { RelayAgentActivityAggregateState, RelayDeviceRegistrationRequest } from "./relay.ts";
 
+export const SelfHostedRelayAddress = Schema.Struct({
+  relayUrl: Schema.String,
+  route: Schema.String,
+  peerId: Schema.String,
+});
+export type SelfHostedRelayAddress = typeof SelfHostedRelayAddress.Type;
+
 export const SelfHostedPushRequest = Schema.Union([
   Schema.Struct({ operation: Schema.Literal("capabilities") }),
   Schema.Struct({

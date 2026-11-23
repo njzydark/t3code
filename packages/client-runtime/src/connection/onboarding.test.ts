@@ -273,7 +273,10 @@ describe("connection onboarding", () => {
         body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body),
       );
       expect(params.get("subject_token")).toBe("original-pairing-code");
-      expect(registration.credential.token).toBe("bearer-token");
+      expect(registration.credential).toMatchObject({
+        _tag: "BearerConnectionCredential",
+        token: "bearer-token",
+      });
     }),
   );
 

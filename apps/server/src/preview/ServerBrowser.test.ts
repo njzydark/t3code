@@ -115,6 +115,7 @@ function makeSession(
       Promise.all(events.listeners(name).map((listener) => listener(...args))),
     detach: vi.fn(async () => {}),
     send: vi.fn(async (method: string, input?: unknown): Promise<Record<string, unknown>> => {
+      await viewerCdpGate?.(method, input);
       if (method === "Page.getNavigationHistory") return { currentIndex: 0, entries: [{}] };
       if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { pageX: 0, pageY: 0 } };
       if (method === "Page.captureScreenshot") {
@@ -394,6 +395,7 @@ const encoderStreams: Array<{ frameRate: number | undefined; bitsPerSecond: numb
 let decodeGate: PromiseWithResolvers<void> | null = null;
 const contextRequests: Array<{ profileId: string; isolated: boolean }> = [];
 let contextGate: PromiseWithResolvers<void> | null = null;
+let viewerCdpGate: ((method: string, input: unknown) => Promise<void> | undefined) | null = null;
 let heldStill: (() => Promise<void>) | null = null;
 let pageCopy = "";
 let keyCopy = "";
@@ -593,6 +595,7 @@ const openDesktopViewer = Effect.gen(function* () {
 });
 
 beforeEach(() => {
+  viewerCdpGate = null;
   contexts.length = 0;
   encoderPageOverride = undefined;
   realContextOverride = undefined;

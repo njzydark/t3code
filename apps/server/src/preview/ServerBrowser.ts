@@ -3236,6 +3236,7 @@ const make = Effect.gen(function* () {
     "ServerBrowser.attachViewer",
   )(function* (input) {
     const tab = yield* findTab(input.threadId, input.tabId);
+    let active = true;
     const output = yield* Queue.make<ServerBrowserViewerOutput>({
       capacity: VIEWER_OUTPUT_LIMIT,
       strategy: "dropping",
@@ -3246,13 +3247,12 @@ const make = Effect.gen(function* () {
         catch: (cause) => new ServerBrowserLaunchError({ cause }),
       }),
       (session) =>
-        Effect.promise(() =>
-          session
-            .send("Page.stopScreencast")
-            .catch(constVoid)
-            .then(() => session.detach())
-            .catch(constVoid),
-        ),
+        Effect.promise(async () => {
+          active = false;
+          // Detaching must not wait on the renderer that stalled the stream.
+          void session.send("Page.stopScreencast").catch(constVoid);
+          await session.detach().catch(constVoid);
+        }),
     );
     const quality = Math.min(100, Math.max(1, Math.round(input.quality)));
     // Chromium may drop the final frame during a burst; send a still when it settles.
@@ -3265,8 +3265,9 @@ const make = Effect.gen(function* () {
     const startScreencast = (scale: number) => {
       screencastScale = scale;
       screencastParams = screencastParams.then(async () => {
-        if (tab.capturing > 0) return;
+        if (!active || tab.capturing > 0) return;
         await session.send("Page.stopScreencast").catch(constVoid);
+        if (!active) return;
         await session
           .send("Page.startScreencast", {
             format: "jpeg",
@@ -3350,7 +3351,8 @@ const make = Effect.gen(function* () {
           clearTimeout(timer);
         }
       }).catch(() => null);
-      if (data) viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
+      if (active && data)
+        viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
     };
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     yield* Effect.addFinalizer(() =>
@@ -3404,10 +3406,12 @@ const make = Effect.gen(function* () {
       });
     });
     void broadcastViewport(tab).catch(constVoid);
-    yield* Effect.promise(() => startScreencast(1));
-    // An idle page does not repaint for a new screencast, so the viewer
-    // starts from a still unless a live frame beat it.
-    if (!screencastStarted) yield* Effect.forkScoped(Effect.promise(pushStill));
+    // Renderer replies must not hold up the viewer's WebSocket upgrade.
+    yield* Effect.gen(function* () {
+      yield* Effect.promise(() => startScreencast(1));
+      // Idle pages need a still until Chromium delivers a live frame.
+      if (active && !screencastStarted) yield* Effect.promise(pushStill);
+    }).pipe(Effect.forkScoped);
     return {
       output,
       input: (raw: unknown) =>

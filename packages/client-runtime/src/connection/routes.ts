@@ -194,7 +194,7 @@ const T3_CONNECT_NAME = "T3 Connect";
 export function connectionRouteLabel(route: ConnectionRoute): string {
   const profile = Option.getOrNull(route.profile);
   if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay)
-    return "Self-hosted relay";
+    return msg("Self-hosted relay");
   switch (connectionRouteKind(route)) {
     case "relay":
       return T3_CONNECT_NAME;

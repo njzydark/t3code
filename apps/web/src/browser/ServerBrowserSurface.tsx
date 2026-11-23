@@ -46,7 +46,7 @@ import { refreshPreviewStreamAccess, usePreviewStreamAccess } from "~/state/prev
 import { observeResize } from "~/lib/observeResize";
 
 export interface ServerBrowserHandle {
-  readonly navigate: (url: string) => void;
+  readonly navigate: (url: string) => boolean;
   readonly history: (delta: -1 | 1) => void;
   readonly reload: (options?: { readonly ignoreCache?: boolean }) => void;
   readonly stopLoading: () => void;
@@ -187,7 +187,9 @@ export function ServerBrowserSurface(props: {
   const sizeRef = useRef<{ width: number; height: number } | null>(null);
   const hasFrameRef = useRef(false);
   const controlRef = useRef<PreviewStreamControl | null>(null);
+  const pendingNavigationRef = useRef<string | null>(null);
   const [control, setControl] = useState<PreviewStreamControl | null>(null);
+  const [connectionTimedOut, setConnectionTimedOut] = useState(false);
   const [promptText, setPromptText] = useState("");
   const [fileChooser, setFileChooser] = useState<PreviewStreamFileChooser | null>(null);
   const [agentCursor, setAgentCursor] = useState<AgentCursorPlacement | null>(null);
@@ -235,7 +237,7 @@ export function ServerBrowserSurface(props: {
 
   // Keep clearInput stable: a new identity reconnects the stream.
   const send = (input: PreviewStreamInput) => {
-    clientRef.current?.send(input);
+    return clientRef.current?.send(input) ?? false;
   };
 
   const clearInput = () => {
@@ -319,7 +321,13 @@ export function ServerBrowserSurface(props: {
   useImperativeHandle(
     ref,
     () => ({
-      navigate: (url) => send({ type: "navigate", url }),
+      navigate: (url) => {
+        const current = controlRef.current;
+        if (current && (!current.canOperate || current.controller !== "you")) return false;
+        if (send({ type: "navigate", url })) return true;
+        pendingNavigationRef.current = url;
+        return true;
+      },
       history: (delta) => send({ type: "history", delta }),
       reload: (options) =>
         send({ type: "reload", ...(options?.ignoreCache ? { ignoreCache: true } : {}) }),
@@ -329,6 +337,13 @@ export function ServerBrowserSurface(props: {
     }),
     [pdfUrl, send],
   );
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- bounds stream startup, including access lookup and upgrades that never answer
+  useEffect(() => {
+    if (!visible || control || hostSetup || accessDenied || connectionTimedOut) return;
+    const timer = setTimeout(() => setConnectionTimedOut(true), 30_000);
+    return () => clearTimeout(timer);
+  }, [visible, control, hostSetup, accessDenied, connectionTimedOut]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the canvas container's size, sends resizes to the stream and grows the frame cap
   useEffect(() => {
@@ -379,7 +394,8 @@ export function ServerBrowserSurface(props: {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the preview stream client and paints its frames onto the canvas while visible
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!visible || accessDenied || hostSetup || !access || !cap || !canvas) return;
+    if (!visible || accessDenied || connectionTimedOut || hostSetup || !access || !cap || !canvas)
+      return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     let noFrameTimer: ReturnType<typeof setTimeout> | null = null;
     const clearNoFrameTimer = () => {
@@ -435,10 +451,16 @@ export function ServerBrowserSurface(props: {
           )
             setPromptText(next.dialog?.defaultValue ?? "");
           if (next.controller !== "you") {
+            pendingNavigationRef.current = null;
             clearInput();
-          } else if (previous?.controller !== "you") {
-            const size = sizeRef.current;
-            if (followSize && size) client.send({ type: "resize", ...size });
+          } else {
+            if (previous?.controller !== "you") {
+              const size = sizeRef.current;
+              if (followSize && size) client.send({ type: "resize", ...size });
+            }
+            const pending = pendingNavigationRef.current;
+            if (next.canOperate && pending && client.send({ type: "navigate", url: pending }))
+              pendingNavigationRef.current = null;
           }
         },
         onConnectedChange: (connected) => {
@@ -489,6 +511,7 @@ export function ServerBrowserSurface(props: {
     accessDenied,
     cap,
     clearInput,
+    connectionTimedOut,
     environmentId,
     followSize,
     hostSetup,
@@ -953,11 +976,15 @@ export function ServerBrowserSurface(props: {
           </Button>
         </div>
       ) : null}
-      {visible && accessDenied ? (
+      {visible && (accessDenied || connectionTimedOut) ? (
         // The page can be invisible beneath an empty or unreachable state; reconnect must remain reachable.
         <div className="visible absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background p-3 text-center">
           <p role="alert" className="text-xs text-muted-foreground">
-            <T>Browser connection was refused.</T>
+            {connectionTimedOut ? (
+              <T>Browser connection timed out.</T>
+            ) : (
+              <T>Browser connection was refused.</T>
+            )}
           </p>
           <Button
             variant="outline"
@@ -965,6 +992,7 @@ export function ServerBrowserSurface(props: {
             onClick={() => {
               unauthorizedRef.current = 0;
               setAccessDenied(false);
+              setConnectionTimedOut(false);
               refreshPreviewStreamAccess(environmentId);
             }}
           >

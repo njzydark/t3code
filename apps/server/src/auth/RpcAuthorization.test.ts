@@ -1,6 +1,5 @@
 import {
   AuthEnvironmentMaintainScope,
-  AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
   AuthDiagnosticsReadScope,
