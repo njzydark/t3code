@@ -1021,6 +1021,151 @@ effectIt.effect.each(["linux", "darwin"] as const)(
   },
 );
 
+effectIt.effect.each([
+  {
+    name: "renamed listener",
+    rows: ["4242 4200 rspack-node", "4200 4100 pnpm T3CODE_THREAD_ID=thread-parent"],
+    thread: "thread-parent",
+  },
+  {
+    name: "renamed intermediate parent",
+    rows: [
+      "4242 4200 rspack-node",
+      "4200 4100 node",
+      "4100 4000 pnpm T3CODE_THREAD_ID=thread-parent",
+    ],
+    thread: "thread-parent",
+  },
+  {
+    name: "nearest marked ancestor",
+    rows: [
+      "4242 4200 rspack-node",
+      "4200 4100 pnpm T3CODE_THREAD_ID=thread-parent",
+      "4100 4000 node T3CODE_THREAD_ID=thread-other",
+    ],
+    thread: "thread-parent",
+  },
+  {
+    name: "listener's own marker",
+    rows: [
+      "4242 4200 node T3CODE_THREAD_ID=thread-self",
+      "4200 4100 pnpm T3CODE_THREAD_ID=thread-parent",
+    ],
+    thread: "thread-self",
+  },
+  {
+    name: "agent CLI ancestor",
+    rows: ["4242 4200 rspack-node", `4200 ${process.pid} agent T3CODE_THREAD_ID=thread-parent`],
+    thread: "thread-parent",
+  },
+  {
+    name: "agent CLI listener",
+    rows: [`4242 ${process.pid} agent T3CODE_THREAD_ID=thread-parent`],
+    thread: null,
+  },
+  { name: "exited parent", rows: ["4242 4200 rspack-node"], thread: null },
+  { name: "parent cycle", rows: ["4242 4200 rspack-node", "4200 4242 node"], thread: null },
+  {
+    name: "T3 server boundary",
+    rows: [
+      `4242 ${process.pid} rspack-node`,
+      `${process.pid} 4100 node T3CODE_THREAD_ID=thread-other`,
+    ],
+    thread: null,
+  },
+  {
+    name: "bounded ancestry",
+    rows: [
+      "4242 4200 rspack-node",
+      ...Array.from({ length: 100 }, (_, index) => `${4200 - index} ${4199 - index} node`),
+      "4100 4000 pnpm T3CODE_THREAD_ID=thread-parent",
+    ],
+    thread: null,
+  },
+])("resolves macOS agent ownership with $name", ({ rows, thread }) => {
+  const psCalls: string[][] = [];
+  const layer = layerScanner.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerNoProc,
+        Layer.succeed(HostProcess.Platform, "darwin"),
+        FetchHttpClient.layer,
+        Layer.succeed(ProcessRunner.ProcessRunner, {
+          run: (input) => {
+            if (input.command === "lsof") {
+              return Effect.succeed(processOutput(`p4242\ncrspack-node\nn*:8080\n`));
+            }
+            const pids = input.args.at(-1)!.split(",");
+            psCalls.push(pids);
+            return Effect.succeed(
+              processOutput(rows.filter((row) => pids.includes(row.split(" ")[0]!)).join("\n")),
+            );
+          },
+        }),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    const servers = yield* scanner.scan();
+    if (thread === null) {
+      expect(servers).toEqual([]);
+    } else {
+      expect(servers).toMatchObject([
+        { port: 8080, pid: 4242, processName: "rspack-node", agent: { threadId: thread } },
+      ]);
+    }
+    const calls = psCalls.length;
+    expect(yield* scanner.scan()).toEqual(servers);
+    expect(psCalls).toHaveLength(calls);
+    expect(psCalls.length).toBeLessThanOrEqual(32);
+    expect(psCalls.flat()).not.toContain(String(process.pid));
+  }).pipe(Effect.provide(layer));
+});
+
+effectIt.effect("retries failed macOS ancestor reads and batches shared parents", () => {
+  let failParent = true;
+  const psCalls: string[][] = [];
+  const layer = layerScanner.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerNoProc,
+        Layer.succeed(HostProcess.Platform, "darwin"),
+        FetchHttpClient.layer,
+        Layer.succeed(ProcessRunner.ProcessRunner, {
+          run: (input) => {
+            if (input.command === "lsof") {
+              return Effect.succeed(
+                processOutput("p4242\ncrspack-node\nn*:8080\np4243\ncrspack-node\nn*:8081\n"),
+              );
+            }
+            const pids = input.args.at(-1)!.split(",");
+            psCalls.push(pids);
+            if (pids.includes("4200")) {
+              return failParent
+                ? processProbeFailure(input)
+                : Effect.succeed(processOutput("4200 4100 pnpm T3CODE_THREAD_ID=thread-parent\n"));
+            }
+            return Effect.succeed(processOutput("4242 4200 rspack-node\n4243 4200 rspack-node\n"));
+          },
+        }),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    expect(yield* scanner.scan()).toEqual([]);
+    failParent = false;
+    expect(yield* scanner.scan()).toMatchObject([
+      { port: 8080, pid: 4242, agent: { threadId: "thread-parent" } },
+      { port: 8081, pid: 4243, agent: { threadId: "thread-parent" } },
+    ]);
+    expect(psCalls).toEqual([["4242", "4243"], ["4200"], ["4242", "4243"], ["4200"]]);
+    expect(yield* scanner.scan()).toHaveLength(2);
+    expect(psCalls).toHaveLength(4);
+  }).pipe(Effect.provide(layer));
+});
+
 effectIt.effect("stops only a job's own process group", () =>
   Effect.sync(() => {
     const serverPid = 100;
