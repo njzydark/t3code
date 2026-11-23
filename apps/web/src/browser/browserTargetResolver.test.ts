@@ -36,6 +36,19 @@ describe("browser target resolver", () => {
     expect(
       resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"),
     ).toBe("http://192.168.1.25:3000/app");
+    for (const httpBaseUrl of [
+      "t3code://app/",
+      "t3code://app/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+      "http://127.0.0.1:3773/__t3_relay/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+    ]) {
+      readPreparedConnection.mockReturnValue({ httpBaseUrl });
+      expect(
+        resolveDiscoveredServerUrl(
+          EnvironmentId.make("environment-1"),
+          "http://localhost:18081/docs?mode=test#results",
+        ),
+      ).toBe("http://localhost:18081/docs?mode=test#results");
+    }
   });
 
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {

@@ -14,6 +14,7 @@ import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import {
   BearerConnectionCredential,
+  DpopConnectionCredential,
   BearerConnectionProfile,
   type ConnectionCatalogEntry,
   SshConnectionProfile,
@@ -61,6 +62,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly credentials?: ReadonlyArray<readonly [string, ConnectionCredential]>;
   readonly authorizeBearer?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeBearer"];
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
+  readonly authorizeDirectDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDirectDpop"];
   readonly primaryBearerToken?: string;
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
   readonly descriptorProtocolVersion?: number | null | undefined;
@@ -110,7 +112,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
           },
         })),
     authorizeDpopHttp: () => Effect.die("unused"),
-    authorizeDirectDpop: () => Effect.die("unused"),
+    authorizeDirectDpop: options?.authorizeDirectDpop ?? (() => Effect.die("unused")),
     authorizeDirectDpopHttp: () => Effect.die("unused"),
     rememberCheckedDescriptor: () => Effect.void,
     renewDpopBeforeExpiry: () => Effect.die("unused"),
@@ -173,51 +175,84 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 });
 
 describe("ConnectionResolver", () => {
-  it.effect("restores a saved relay through the gateway captured when the resolver was built", () =>
-    Effect.gen(function* () {
-      const target = new BearerConnectionTarget({
-        environmentId: ENVIRONMENT_ID,
-        label: "Relay",
-        connectionId: "self-relay",
-      });
-      const address = {
-        relayUrl: "https://relay.example.com",
-        route: "1234567890abcdef1234567890abcdef",
-        peerId: "pinned-host",
-      };
-      const profile = new BearerConnectionProfile({
-        connectionId: target.connectionId,
-        environmentId: ENVIRONMENT_ID,
-        label: "Relay",
-        httpBaseUrl: `https://${address.route}.t3-relay.invalid`,
-        wsBaseUrl: `wss://${address.route}.t3-relay.invalid`,
-        selfHostedRelay: address,
-      });
-      const endpoint = {
-        httpBaseUrl: "http://127.0.0.1:49123/",
-        wsBaseUrl: "ws://127.0.0.1:49123/",
-      };
-      const layerBroker = yield* makeDependencies({
-        credentials: [
-          [target.connectionId, new BearerConnectionCredential({ token: "saved-session" })],
-        ],
-      });
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
-        Effect.provide(
-          layerBroker.pipe(
-            Layer.provide(
-              Layer.succeed(ClientCapabilities.SelfHostedRelayGateway, {
-                prepare: () => Effect.succeed(endpoint),
-                disconnect: () => Effect.void,
-              }),
+  it.effect.each(["bearer", "dpop"] as const)(
+    "restores a saved %s relay through its gateway",
+    (authorization) =>
+      Effect.gen(function* () {
+        const target = new BearerConnectionTarget({
+          environmentId: ENVIRONMENT_ID,
+          label: "Relay",
+          connectionId: "self-relay",
+        });
+        const address = {
+          relayUrl: "https://relay.example.com",
+          route: "1234567890abcdef1234567890abcdef",
+          peerId: "pinned-host",
+        };
+        const profile = new BearerConnectionProfile({
+          connectionId: target.connectionId,
+          environmentId: ENVIRONMENT_ID,
+          label: "Relay",
+          httpBaseUrl: `https://${address.route}.t3-relay.invalid`,
+          wsBaseUrl: `wss://${address.route}.t3-relay.invalid`,
+          selfHostedRelay: address,
+        });
+        const endpoint = {
+          httpBaseUrl: "http://127.0.0.1:49123/",
+          wsBaseUrl: "ws://127.0.0.1:49123/",
+        };
+        const layerBroker = yield* makeDependencies({
+          credentials: [
+            [
+              target.connectionId,
+              authorization === "bearer"
+                ? new BearerConnectionCredential({ token: "saved-session" })
+                : new DpopConnectionCredential({
+                    accessToken: "saved-session",
+                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                  }),
+            ],
+          ],
+          authorizeDirectDpop: (input) => {
+            expect(input.httpBaseUrl).toBe(endpoint.httpBaseUrl);
+            expect(input.wsBaseUrl).toBe(endpoint.wsBaseUrl);
+            return Effect.succeed({
+              environmentId: input.expectedEnvironmentId,
+              label: "Relay",
+              httpBaseUrl: input.httpBaseUrl,
+              socketUrl: `${input.wsBaseUrl}ws`,
+              httpAuthorization: {
+                _tag: "Dpop",
+                accessToken: "saved-session",
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+              },
+            });
+          },
+        });
+        const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
+          Effect.provide(
+            layerBroker.pipe(
+              Layer.provide(
+                Layer.succeed(ClientCapabilities.SelfHostedRelayGateway, {
+                  prepare: () => Effect.succeed(endpoint),
+                  disconnect: () => Effect.void,
+                }),
+              ),
             ),
           ),
-        ),
-      );
-      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
-      expect(prepared.httpBaseUrl).toBe(endpoint.httpBaseUrl);
-      expect(prepared.httpAuthorization).toEqual({ _tag: "Bearer", token: "saved-session" });
-    }),
+        );
+        const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+        expect(prepared.httpBaseUrl).toBe(endpoint.httpBaseUrl);
+        expect(prepared.httpAuthorization).toEqual(
+          authorization === "bearer"
+            ? { _tag: "Bearer", token: "saved-session" }
+            : {
+                _tag: "Dpop",
+                accessToken: "saved-session",
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+              },
+        );
+      }),
   );
 
   it.effect("blocks an old host during discovery before opening orchestration RPC", () =>

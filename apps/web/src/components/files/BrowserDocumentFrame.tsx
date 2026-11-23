@@ -1,3 +1,5 @@
+import { relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
+import { useGT } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type KeybindingCommand,
@@ -29,6 +31,7 @@ import {
 } from "@t3tools/shared/keybindings";
 import {
   lazy,
+  type ComponentProps,
   type ReactNode,
   Suspense,
   useEffect,
@@ -268,7 +271,7 @@ function FileDocument(props: {
     <div className="relative min-h-0 flex-1">
       {[next, frames.shown].map((revision) =>
         revision === null ? null : (
-          <iframe
+          <RelayDocumentFrame
             key={revision.key}
             ref={revision === next ? nextFrame : shownFrame}
             src={revision.src}
@@ -299,6 +302,52 @@ function FileDocument(props: {
   );
 }
 
+function useRelayDocument(src: string) {
+  const relay = relayRouteFromUrl(src) !== null;
+  const [document, setDocument] = useState<{ html: string } | { failed: true } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sandboxed iframe navigations bypass the service worker, so fetch relay HTML through the page's encrypted transport
+  useEffect(() => {
+    if (!relay) return;
+    const controller = new AbortController();
+    void fetch(src, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Relay document unavailable.");
+        const html = await response.text();
+        if (controller.signal.aborted) return;
+        const parsed = new DOMParser().parseFromString(html, "text/html");
+        if (!parsed.querySelector("base")) {
+          const base = parsed.createElement("base");
+          base.href = src;
+          parsed.head.prepend(base);
+        }
+        setDocument({ html: `<!doctype html>${parsed.documentElement.outerHTML}` });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setDocument({ failed: true });
+      });
+    return () => controller.abort();
+  }, [relay, src]);
+  return {
+    pending: relay && document === null,
+    failed: document !== null && "failed" in document,
+    source: relay
+      ? { srcDoc: document !== null && "html" in document ? document.html : "" }
+      : { src },
+  };
+}
+
+function RelayDocumentFrame({
+  src,
+  ...props
+}: ComponentProps<"iframe"> & { readonly src: string }) {
+  const gt = useGT();
+  const document = useRelayDocument(src);
+  if (document.pending) return null;
+  if (document.failed)
+    return <p role="alert">{gt("Unable to load {title}", { title: props.title ?? "" })}</p>;
+  return <iframe {...props} {...document.source} />;
+}
+
 /** Keep the initial URL while mounted; re-signing must not reload the page. */
 export function HtmlRenderDocument(props: {
   readonly src: string;
@@ -311,12 +360,14 @@ export function HtmlRenderDocument(props: {
   /** Reports fullscreen changes so virtualized rows can stay mounted. */
   readonly onFullscreenChange?: ((fullscreen: boolean) => void) | undefined;
 }) {
+  const gt = useGT();
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [src] = useState(
     () =>
       `${props.src.split("#", 1)[0]}${htmlRenderThemeFragment(theme)}${props.containScroll ? HTML_RENDER_CONTAIN_SCROLL_FRAGMENT : ""}`,
   );
+  const relayDocument = useRelayDocument(src);
   const [loaded, setLoaded] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const postTheme = () => {
@@ -449,9 +500,12 @@ export function HtmlRenderDocument(props: {
   }, []);
   return (
     <>
+      {relayDocument.failed ? (
+        <p role="alert">{gt("Unable to load {title}", { title: props.title })}</p>
+      ) : null}
       <iframe
         ref={frameRef}
-        src={src}
+        {...relayDocument.source}
         title={props.title}
         // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
         sandbox="allow-scripts allow-forms"

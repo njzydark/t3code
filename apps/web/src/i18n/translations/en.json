@@ -3223,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "on the computer that opened this page"]
+      "c": [
+        " ",
+        "on the computer that opened this page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3235,7 +3238,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· whoever runs it gets this access"]
+      "c": [
+        " ",
+        "· whoever runs it gets this access"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Only approve a sign-in you just started.",
@@ -13023,5 +13029,39 @@
       "v": "v"
     },
     " more in Linked items"
-  ]
+  ],
+  "07775b794325d398": "Host registration token",
+  "9a37921edcadc6bd": "Connection error",
+  "5d3565d164dc27b1": "Let other devices reach this host through your own relay. No inbound host port is needed.",
+  "f1c8f9cc222a29f7": "Relay URL",
+  "752fa31f9a4b7702": "Disconnected",
+  "b51626264716da05": "Disconnect relay",
+  "2b4adc7233a3fbb4": "Direct / existing address",
+  "cddcf7f27366be2f": "Use an existing host address, such as LAN, Tailscale or a configured public endpoint.",
+  "d2b9db94d774cc6f": "Remove relay configuration",
+  "3187aa9eaa49f0e6": "Direct / existing address",
+  "6783496b614f4cc3": "Browser connection timed out.",
+  "3230508d1cfe0c38": "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
+  "f17b91afaa124ac4": "Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This admits hosts to the relay; devices use pairing links instead. Stored privately on this host.",
+  "7d3d88c4e1bf0d36": "your relay",
+  "31570dded68a4269": "Self-hosted relay environment",
+  "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
+  "6bcf847db2256cf2": "Self-hosted relay URL",
+  "f1735a1816ec727b": "Use an HTTPS origin. HTTP is allowed only for loopback testing.",
+  "2689839de807d3d6": "Self-hosted relay",
+  "a5b699e503a921c6": "Relay registration token",
+  "3dee8e329fca3469": "Saved on this host; leave blank to keep",
+  "b6df1e7ae98ddd23": "Unable to load {title}",
+  "bcfe2e0877306bb3": "Self-hosted relay",
+  "2c92340476b0adab": "Via {relayUrl}. No direct access to this host is needed.",
+  "38fd76cdee43e19a": "Save and reconnect",
+  "122fd78af7b68139": "Connection type",
+  "582f57f02e5a5869": "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct.",
+  "f31e3c09e92419fd": "Save and connect",
+  "95dbfc92730ea987": "At least 32 characters",
+  "96f9bceef1e19707": "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
+  "31426dda1da03064": "Relay connection actions",
+  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
+  "6e9b12a55d970d4e": "Not configured",
+  "7a6edc5d78592a76": "The relay operation failed."
 }

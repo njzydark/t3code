@@ -9,7 +9,10 @@ import type {
   DesktopPortForward,
   DesktopPreviewTunnelAccessRequest,
   EnvironmentId,
+  SelfHostedRelayAddress,
 } from "@t3tools/contracts";
+import { EncryptedRelayClient, RelayWebSocket } from "@t3tools/relay-transport";
+import { relayRouteFromUrl, virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import type { NonEmptyReadonlyArray } from "effect/Array";
@@ -138,55 +141,8 @@ const isTunnelEndpoint = (tunnelUrl: string, port: number) => {
   return isLoopbackName(endpoint.host) && endpoint.port === port;
 };
 
-/** Opens a connection to the destination; `ws` pauses its socket, so a slow page slows the tunnel. */
 /** Set by the environment's /api/preview/tunnel when it reached the port and nothing listens. */
 const PORT_REFUSED_HEADER = "x-t3-tunnel-port-refused";
-
-const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
-  tunnelUrl: string,
-  port: number,
-  onPortRefused?: () => void,
-) {
-  if (isTunnelEndpoint(tunnelUrl, port)) {
-    const endpoint = yield* NodeSocket.makeNet({
-      ...tunnelEndpoint(tunnelUrl),
-      openTimeout: CONNECT_TIMEOUT,
-    });
-    return { pull: yield* Socket.readerBytes(endpoint), writer: yield* endpoint.writer };
-  }
-  const url = new URL(tunnelUrl);
-  url.searchParams.set("port", String(port));
-  const tunnel = yield* Effect.acquireRelease(
-    Effect.sync(() => {
-      // Closing before the handshake finishes emits an error after Socket's listeners are gone.
-      const tunnel = new NodeWS.WebSocket(url).on("error", () => undefined);
-      if (onPortRefused) {
-        tunnel.on("unexpected-response", (_request, response) => {
-          if (response.headers[PORT_REFUSED_HEADER] !== undefined) onPortRefused();
-          // Handled here, so `ws` leaves aborting the handshake to us.
-          tunnel.terminate();
-        });
-      }
-      return tunnel;
-    }),
-    (tunnel) => Effect.sync(() => tunnel.close()),
-  );
-  const socket = yield* Socket.fromWebSocket(Effect.succeed(tunnel), {
-    openTimeout: CONNECT_TIMEOUT,
-  });
-  // Effect's WebSocket writer never waits for the send buffer; `ws` calls back once it is written.
-  const sendAll = (chunks: NonEmptyReadonlyArray<Uint8Array>) =>
-    Effect.callback<void>((resume) => {
-      const last = chunks.length - 1;
-      chunks.forEach((chunk, index) =>
-        tunnel.send(chunk, index === last ? () => resume(Effect.void) : undefined),
-      );
-    });
-  return {
-    pull: yield* Socket.readerBytes(socket),
-    writer: { write: (chunk: Uint8Array) => sendAll([chunk]), writeAll: sendAll },
-  };
-});
 
 const TCP_TABLES = ["/proc/net/tcp", "/proc/net/tcp6"];
 
@@ -308,6 +264,7 @@ export class LoopbackTunnel extends Context.Service<
     readonly resolveAccess: (input: {
       readonly requestId: string;
       readonly url: string | null;
+      readonly relay?: SelfHostedRelayAddress | undefined;
     }) => Effect.Effect<void>;
     /** Listens on this machine's loopback, on the same port when it is free. */
     readonly forward: (input: {
@@ -332,7 +289,102 @@ export class LoopbackTunnel extends Context.Service<
   }
 >()("@t3tools/desktop/preview/LoopbackTunnel") {}
 
+type TunnelAccess = { readonly url: string; readonly relay?: SelfHostedRelayAddress | undefined };
+
 const make = Effect.gen(function* () {
+  const relayClient = yield* Effect.acquireRelease(
+    Effect.sync(
+      () =>
+        new EncryptedRelayClient((url) => new NodeWS.WebSocket(url, { perMessageDeflate: false })),
+    ),
+    (client) => Effect.sync(() => client.dispose()),
+  );
+  const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
+    access: TunnelAccess,
+    port: number,
+    onPortRefused?: () => void,
+  ) {
+    const tunnelUrl = access.url;
+    if (!access.relay && isTunnelEndpoint(tunnelUrl, port)) {
+      const endpoint = yield* NodeSocket.makeNet({
+        ...tunnelEndpoint(tunnelUrl),
+        openTimeout: CONNECT_TIMEOUT,
+      });
+      return { pull: yield* Socket.readerBytes(endpoint), writer: yield* endpoint.writer };
+    }
+    const url = new URL(tunnelUrl);
+    url.searchParams.set("port", String(port));
+    const tunnel = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          // Closing before the handshake finishes emits an error after Socket's listeners are gone.
+          if (access.relay) {
+            if (relayRouteFromUrl(tunnelUrl) !== access.relay.route)
+              throw new Error("The preview tunnel relay does not match its environment.");
+            relayClient.register(access.relay);
+            const target = new URL("/api/preview/tunnel", virtualRelayOrigin(access.relay.route));
+            target.protocol = "wss:";
+            target.search = url.search;
+            const tunnel = relayClient.socket(target.href);
+            if (onPortRefused) {
+              tunnel.addEventListener("rejection", (event) => {
+                if (
+                  "headers" in event &&
+                  Array.isArray(event.headers) &&
+                  event.headers.some(
+                    (header: unknown) => Array.isArray(header) && header[0] === PORT_REFUSED_HEADER,
+                  )
+                )
+                  onPortRefused();
+              });
+            }
+            return tunnel;
+          }
+          const tunnel = new NodeWS.WebSocket(url).on("error", () => undefined);
+          if (onPortRefused) {
+            tunnel.on("unexpected-response", (_request, response) => {
+              if (response.headers[PORT_REFUSED_HEADER] !== undefined) onPortRefused();
+              // Handled here, so `ws` leaves aborting the handshake to us.
+              tunnel.terminate();
+            });
+          }
+          return tunnel;
+        },
+        catch: (cause) =>
+          new Socket.SocketError({
+            reason: new Socket.SocketOpenError({ kind: "Unknown", cause }),
+          }),
+      }),
+      (tunnel) => Effect.sync(() => tunnel.close()),
+    );
+    const socket = yield* Socket.fromWebSocket(Effect.succeed(tunnel), {
+      openTimeout: CONNECT_TIMEOUT,
+    });
+    // Effect's WebSocket writer never waits for the send buffer; `ws` calls back once it is written.
+    const sendAll = (chunks: NonEmptyReadonlyArray<Uint8Array>) =>
+      tunnel instanceof RelayWebSocket
+        ? Effect.tryPromise({
+            try: async () => {
+              for (const chunk of chunks) {
+                tunnel.send(chunk);
+                await tunnel.flushed();
+              }
+            },
+            catch: (cause) =>
+              new Socket.SocketError({ reason: new Socket.SocketWriteError({ cause }) }),
+          })
+        : Effect.callback<void>((resume) => {
+            const last = chunks.length - 1;
+            chunks.forEach((chunk, index) =>
+              tunnel.send(chunk, index === last ? () => resume(Effect.void) : undefined),
+            );
+          });
+    return {
+      pull: yield* Socket.readerBytes(socket),
+      writer: { write: (chunk: Uint8Array) => sendAll([chunk]), writeAll: sendAll },
+    };
+  });
+
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const fileSystem = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;
@@ -350,7 +402,7 @@ const make = Effect.gen(function* () {
   const forwardListeners = new Set<
     (forwards: ReadonlyArray<DesktopPortForward>) => Effect.Effect<void>
   >();
-  const pending = new Map<string, Deferred.Deferred<string | null>>();
+  const pending = new Map<string, Deferred.Deferred<TunnelAccess | null>>();
   const listenerPorts = new Map<string, number>();
   const routed = new WeakSet<Electron.Session>();
   let requestCount = 0;
@@ -363,7 +415,7 @@ const make = Effect.gen(function* () {
     const window = yield* electronWindow.currentMainOrFirst;
     if (Option.isNone(window) || window.value.isDestroyed()) return null;
     const requestId = `preview-tunnel-${requestCount++}`;
-    const answer = yield* Deferred.make<string | null>();
+    const answer = yield* Deferred.make<TunnelAccess | null>();
     pending.set(requestId, answer);
     window.value.webContents.send(PREVIEW_TUNNEL_ACCESS_REQUEST_CHANNEL, {
       requestId,
@@ -496,7 +548,7 @@ const make = Effect.gen(function* () {
    * was reached and nothing listens on the probe port there. Anything else is unknown.
    */
   const probeLoopback = Effect.fn("LoopbackTunnel.probeLoopback")(
-    function* (environmentId: string, tunnelUrl: string) {
+    function* (environmentId: string, tunnelUrl: TunnelAccess) {
       const unavailable = new LoopbackTunnelUnavailableError({ environmentId });
       const nonce = new TextEncoder().encode(yield* random.uuidV4());
       const arrived = yield* Deferred.make<void>();
@@ -669,9 +721,13 @@ const make = Effect.gen(function* () {
     else routed.delete(session);
   }, routing.withPermits(1));
 
-  const resolveAccess: LoopbackTunnel["Service"]["resolveAccess"] = ({ requestId, url }) => {
+  const resolveAccess: LoopbackTunnel["Service"]["resolveAccess"] = ({ requestId, url, relay }) => {
     const answer = pending.get(requestId);
-    return answer ? Deferred.succeed(answer, url).pipe(Effect.asVoid) : Effect.void;
+    return answer
+      ? Deferred.succeed(answer, url === null ? null : { url, ...(relay ? { relay } : {}) }).pipe(
+          Effect.asVoid,
+        )
+      : Effect.void;
   };
 
   return LoopbackTunnel.of({

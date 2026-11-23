@@ -66,7 +66,13 @@ async function fixture() {
     }
   });
   http.on("connection", (socket) => connections.add(socket));
-  const ws = new WebSocketServer({ server: http });
+  const ws = new WebSocketServer({
+    server: http,
+    verifyClient: ({ req }, done) =>
+      req.url === "/refused"
+        ? done(false, 502, "Bad Gateway", { "x-t3-tunnel-port-refused": "1" })
+        : done(true),
+  });
   ws.on("connection", (socket) => {
     socket.send("relay-welcome");
     socket.on("message", (bytes, binary) => socket.send(bytes, { binary }));
@@ -178,11 +184,39 @@ describe("self-hosted encrypted relay", () => {
     expect(messages[0]).toBe("relay-welcome");
     expect(messages[1]).toBe("test text");
     expect(new Uint8Array(messages[2] as ArrayBuffer)).toEqual(bytes);
+    socket.pause();
+    socket.send("paused");
+    await socket.flushed();
+    const whilePaused = await test.client.fetch(`${test.endpoint}/file`, {
+      headers: { authorization: "Bearer t3-session" },
+    });
+    expect(await whilePaused.text()).toBe("hello");
+    expect(messages).toHaveLength(3);
+    const resumed = new Promise<void>((resolve) => {
+      socket.onmessage = (event) => {
+        expect(event.data).toBe("paused");
+        resolve();
+      };
+    });
+    socket.resume();
+    await resumed;
     const closed = new Promise<void>((resolve) => {
       socket.onclose = () => resolve();
     });
     socket.close();
     await closed;
+    const refused = test.client.socket(test.endpoint.replace("https:", "wss:") + "/refused");
+    const rejections: Event[] = [];
+    refused.addEventListener("rejection", (event) => rejections.push(event));
+    await new Promise<void>((resolve) => {
+      refused.onclose = () => resolve();
+    });
+    expect(rejections).toMatchObject([
+      {
+        status: 502,
+        headers: expect.arrayContaining([["x-t3-tunnel-port-refused", "1"]]),
+      },
+    ]);
   });
 
   it("rejects a relay that routes to a different host identity", async () => {

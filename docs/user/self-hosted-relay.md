@@ -121,6 +121,11 @@ Opening the web image's domain without a pairing link shows the unconnected
 client, not a public list of registered hosts. Previously paired browsers can
 reconnect using their own saved credentials; visitors do not share sessions.
 
+The desktop app's **Forwarded ports** command and in-app browser also work through
+the self-hosted relay. Enable **Settings → Sharing & access → Preview tunnel** on
+the host and pair with terminal access. Forwarded ports can be stopped from the
+command palette and close when you quit the desktop app.
+
 ## Trust and compatibility
 
 The host and client establish a Noise encrypted session through the relay.

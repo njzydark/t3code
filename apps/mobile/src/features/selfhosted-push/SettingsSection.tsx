@@ -1,11 +1,12 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import * as Exit from "effect/Exit";
+import { useGT } from "gt-react-native";
+import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { AsyncResult } from "effect/reactivity";
 import { Linking, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Dialog from "../../components/ui/Dialog";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import { SettingsRow } from "../settings/components/SettingsRow";
@@ -30,32 +31,41 @@ async function updatePushPreferences(patch: PushPreferencesPatch, save: () => Pr
 }
 
 export function SelfHostedPushSettingsSection() {
+  const gt = useGT();
   const preferences = useAtomValue(mobilePreferencesAtom);
   const status = useAtomValue(selfHostedPushStatusAtom);
   const hasTargets = useAtomValue(hasSelfHostedPushTargetsAtom);
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promiseExit" });
+  const savePreferences = useAtomCommand(saveMobilePreferences, { reportFailure: false });
   const [saving, setSaving] = useState(false);
   if (Platform.OS !== "ios" || !hasTargets) return null;
   const value = AsyncResult.isSuccess(preferences) ? preferences.value : null;
   const update = async (patch: PushPreferencesPatch) => {
     if (saving) return;
     setSaving(true);
-    await updatePushPreferences(patch, async () =>
-      Exit.isSuccess(await savePreferences(patch)),
+    await updatePushPreferences(
+      patch,
+      async () => (await savePreferences(patch))._tag === "Success",
     ).catch(() => {
       Dialog.alert(
-        "Self-hosted notifications unavailable",
-        "Check notification permissions, the Relay's APNs configuration, and this app's signing identity.",
+        gt("Self-hosted notifications unavailable"),
+        gt(
+          "Check notification permissions, the Relay's APNs configuration, and this app's signing identity.",
+        ),
       );
     });
     setSaving(false);
   };
   return (
-    <SettingsSection title="Self-hosted Relay">
-      <SettingsRow icon="bell.badge" label="Push service" value={status} valuePosition="below" />
+    <SettingsSection title={gt("Self-hosted Relay")}>
       <SettingsRow
         icon="bell.badge"
-        label="Allow notifications on this device"
+        label={gt("Push service")}
+        value={status}
+        valuePosition="below"
+      />
+      <SettingsRow
+        icon="bell.badge"
+        label={gt("Allow notifications on this device")}
         disabled={!value || saving}
         onPress={() => {
           void update({ selfHostedPushEnabled: true });
@@ -63,8 +73,10 @@ export function SelfHostedPushSettingsSection() {
       />
       <SettingsSwitchRow
         icon="bell.badge"
-        label="Use self-hosted push"
-        subtitle="Requires push to be enabled on your Relay with credentials matching this app. Independent of T3 Connect."
+        label={gt("Use self-hosted push")}
+        subtitle={gt(
+          "Requires push to be enabled on your Relay with credentials matching this app. Independent of T3 Connect.",
+        )}
         disabled={!value || saving}
         value={value?.selfHostedPushEnabled !== false}
         onValueChange={(enabled) => {
@@ -73,7 +85,7 @@ export function SelfHostedPushSettingsSection() {
       />
       <SettingsSwitchRow
         icon="bell.badge"
-        label="Self-hosted Live Activities"
+        label={gt("Self-hosted Live Activities")}
         disabled={!value || saving || value.selfHostedPushEnabled === false}
         value={value?.selfHostedLiveActivitiesEnabled !== false}
         onValueChange={(enabled) => {

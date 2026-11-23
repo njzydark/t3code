@@ -1,3 +1,5 @@
+import { T, msg, useGT, useMessages } from "gt-react";
+import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthRelayReadScope,
@@ -31,19 +33,19 @@ import {
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 function failureMessage(result: Parameters<typeof squashAtomCommandFailure>[0]) {
   const cause = squashAtomCommandFailure(result);
-  return cause instanceof Error ? cause.message : "The relay operation failed.";
+  return cause instanceof Error ? cause.message : m(msg("The relay operation failed."));
 }
 
 const phaseLabel: Record<SelfHostedRelayStatus["phase"], string> = {
-  disabled: "Disconnected",
-  connecting: "Connecting…",
-  connected: "Connected",
-  reconnecting: "Reconnecting…",
-  error: "Connection error",
+  disabled: msg("Disconnected"),
+  connecting: msg("Connecting…"),
+  connected: msg("Connected"),
+  reconnecting: msg("Reconnecting…"),
+  error: msg("Connection error"),
 };
 
 export function SelfHostedRelaySettings({
@@ -53,6 +55,9 @@ export function SelfHostedRelaySettings({
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
 }) {
+  const gt = useGT();
+  const resolveMessage = useMessages();
+  const searchableSetting = useSearchableSetting();
   const canRead = useEnvironmentScope(environmentId, AuthRelayReadScope);
   const query = useEnvironmentQuery(
     canRead ? selfHostedRelayStatus({ environmentId, input: {} }) : null,
@@ -75,11 +80,11 @@ export function SelfHostedRelaySettings({
     (token.length >= 32 || (token.length === 0 && data.hasRegistrationToken));
   const status = data
     ? data.hasRegistrationToken
-      ? phaseLabel[data.phase]
+      ? resolveMessage(phaseLabel[data.phase])
       : data.phase === "error"
-        ? phaseLabel.error
-        : "Not configured"
-    : "Loading…";
+        ? resolveMessage(phaseLabel.error)
+        : gt("Not configured")
+    : gt("Loading…");
 
   const handleOpenChange = (next: boolean) => {
     if (busy) return;
@@ -108,7 +113,9 @@ export function SelfHostedRelaySettings({
   const clear = async () => {
     if (
       !(await requestConfirmDialog(
-        "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
+        gt(
+          "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
+        ),
       ))
     )
       return;
@@ -131,19 +138,25 @@ export function SelfHostedRelaySettings({
         (data?.hasRegistrationToken
           ? `${status} · ${data.relayUrl}`
           : (data?.error ??
-            "Let other devices reach this host through your own relay. No inbound host port is needed."))
+            gt(
+              "Let other devices reach this host through your own relay. No inbound host port is needed.",
+            )))
       }
       control={
         <Dialog open={open} onOpenChange={handleOpenChange}>
           <DialogTrigger render={<Button size="sm" variant="outline" disabled={!data} />}>
-            {data?.hasRegistrationToken ? "Configure" : "Set up"}
+            {data?.hasRegistrationToken ? gt("Configure") : gt("Set up")}
           </DialogTrigger>
           <DialogPopup className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Self-hosted relay</DialogTitle>
+              <DialogTitle>
+                <T>Self-hosted relay</T>
+              </DialogTitle>
               <DialogDescription>
-                Connect {environmentLabel} to your own relay. This does not enable LAN access or use
-                T3 Connect. The connector runs with T3 and reconnects on startup.
+                {gt(
+                  "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
+                  { environmentLabel },
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogPanel>
@@ -153,9 +166,11 @@ export function SelfHostedRelaySettings({
                   {data?.error ? `: ${data.error}` : ""}
                 </p>
                 <label className="block space-y-1.5">
-                  <span className="text-xs font-medium">Relay URL</span>
+                  <span className="text-xs font-medium">
+                    <T>Relay URL</T>
+                  </span>
                   <Input
-                    aria-label="Self-hosted relay URL"
+                    aria-label={gt("Self-hosted relay URL")}
                     type="url"
                     value={relayUrl}
                     placeholder="https://relay.example.com"
@@ -163,13 +178,15 @@ export function SelfHostedRelaySettings({
                     onChange={(event) => setRelayUrl(event.target.value)}
                   />
                   <span className="block text-xs text-muted-foreground">
-                    Use an HTTPS origin. HTTP is allowed only for loopback testing.
+                    <T>Use an HTTPS origin. HTTP is allowed only for loopback testing.</T>
                   </span>
                 </label>
                 <label className="block space-y-1.5">
-                  <span className="text-xs font-medium">Host registration token</span>
+                  <span className="text-xs font-medium">
+                    <T>Host registration token</T>
+                  </span>
                   <Input
-                    aria-label="Relay registration token"
+                    aria-label={gt("Relay registration token")}
                     type="password"
                     autoComplete="new-password"
                     spellCheck={false}
@@ -177,21 +194,25 @@ export function SelfHostedRelaySettings({
                     maxLength={1024}
                     placeholder={
                       data?.hasRegistrationToken
-                        ? "Saved on this host; leave blank to keep"
-                        : "At least 32 characters"
+                        ? gt("Saved on this host; leave blank to keep")
+                        : gt("At least 32 characters")
                     }
                     disabled={!canEdit || busy}
                     onChange={(event) => setToken(event.target.value)}
                   />
                   <span className="block text-xs text-muted-foreground">
-                    Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This
-                    admits hosts to the relay; devices use pairing links instead. Stored privately
-                    on this host.
+                    <T>
+                      Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This
+                      admits hosts to the relay; devices use pairing links instead. Stored privately
+                      on this host.
+                    </T>
                   </span>
                 </label>
                 <p className="text-xs text-muted-foreground">
-                  To connect another device, use Create link under Authorized clients and choose
-                  Self-hosted relay.
+                  <T>
+                    To connect another device, use Create link under Authorized clients and choose
+                    Self-hosted relay.
+                  </T>
                 </p>
                 {error ? (
                   <p role="alert" className="text-sm text-destructive">
@@ -208,7 +229,7 @@ export function SelfHostedRelaySettings({
                       <Button
                         size="icon-sm"
                         variant="ghost-muted"
-                        aria-label="Relay connection actions"
+                        aria-label={gt("Relay connection actions")}
                         disabled={!canEdit || busy || !data}
                       />
                     }
@@ -217,26 +238,30 @@ export function SelfHostedRelaySettings({
                   </MenuTrigger>
                   <MenuPopup align="start">
                     <MenuItem disabled={!data?.enabled} onClick={() => void update(false)}>
-                      Disconnect relay
+                      <T>Disconnect relay</T>
                     </MenuItem>
                     <MenuItem
                       variant="destructive"
                       disabled={!data?.hasRegistrationToken && data?.phase !== "error"}
                       onClick={() => void clear()}
                     >
-                      Remove relay configuration
+                      <T>Remove relay configuration</T>
                     </MenuItem>
                   </MenuPopup>
                 </Menu>
                 <div className="flex gap-2">
                   <Button variant="outline" disabled={busy} onClick={() => handleOpenChange(false)}>
-                    Cancel
+                    <T>Cancel</T>
                   </Button>
                   <Button
                     disabled={!canSave || (data?.phase === "connected" && !dirty)}
                     onClick={() => void update(true)}
                   >
-                    {busy ? "Saving…" : data?.enabled ? "Save and reconnect" : "Save and connect"}
+                    {busy
+                      ? gt("Saving…")
+                      : data?.enabled
+                        ? gt("Save and reconnect")
+                        : gt("Save and connect")}
                   </Button>
                 </div>
               </div>

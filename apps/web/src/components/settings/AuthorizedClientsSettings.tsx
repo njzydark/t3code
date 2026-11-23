@@ -2,6 +2,7 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { useAtomValue } from "@effect/atom-react";
+import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useRef, useState } from "react";
@@ -201,10 +202,10 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
         {
           id: "self-hosted-relay",
           preferenceKey: "self-hosted-relay",
-          label: "Self-hosted relay",
+          label: gt("Self-hosted relay"),
           url: pairingUrl,
           detail: new URL(pairingUrl).origin,
-          qrShareable: !isLoopbackHostname(new URL(pairingUrl).hostname),
+          qrShareable: !isLocalLoopbackHost(new URL(pairingUrl).hostname),
         },
       ];
     for (const endpoint of endpoints) {
@@ -754,7 +755,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
             {relay.data?.hasRegistrationToken || connectionType === "relay" ? (
               <div className="space-y-1.5">
                 <span id="pairing-connection-type" className="text-xs font-medium">
-                  Connection type
+                  <T>Connection type</T>
                 </span>
                 <Select
                   value={connectionType}
@@ -768,24 +769,34 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
                   >
                     <SelectValue>
                       {connectionType === "relay"
-                        ? "Self-hosted relay"
-                        : "Direct / existing address"}
+                        ? gt("Self-hosted relay")
+                        : gt("Direct / existing address")}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
-                    <SelectItem value="direct">Direct / existing address</SelectItem>
-                    <SelectItem value="relay">Self-hosted relay</SelectItem>
+                    <SelectItem value="direct">
+                      <T>Direct / existing address</T>
+                    </SelectItem>
+                    <SelectItem value="relay">
+                      <T>Self-hosted relay</T>
+                    </SelectItem>
                   </SelectPopup>
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {connectionType === "relay"
-                    ? `Via ${relay.data?.relayUrl ?? "your relay"}. No direct access to this host is needed.`
-                    : "Use an existing host address, such as LAN, Tailscale or a configured public endpoint."}
+                    ? gt("Via {relayUrl}. No direct access to this host is needed.", {
+                        relayUrl: relay.data?.relayUrl ?? gt("your relay"),
+                      })
+                    : gt(
+                        "Use an existing host address, such as LAN, Tailscale or a configured public endpoint.",
+                      )}
                 </p>
                 {relayUnavailable ? (
                   <p role="status" className="text-xs text-warning">
                     {relay.error ??
-                      "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct."}
+                      gt(
+                        "The self-hosted relay is not connected. Connect it in the host settings above, or choose Direct.",
+                      )}
                   </p>
                 ) : null}
               </div>
