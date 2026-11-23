@@ -102,6 +102,7 @@ const WEB_PROBE_CONCURRENCY = 16;
 const NAVIGATION_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const PS_TIMEOUT_MS = 5_000;
 const PS_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+const AGENT_ANCESTOR_LIMIT = 32;
 const STOP_GRACE_MS = 3_000;
 const STOP_POLL_INTERVAL = Duration.millis(250);
 
@@ -392,6 +393,11 @@ interface AgentListener {
   readonly isAgentCli: boolean;
 }
 
+interface ProcessEnvironmentRow {
+  readonly ppid: number;
+  readonly threadId: ThreadId | null;
+}
+
 /** Reads the parent pid from `/proc/<pid>/stat`, whose command field can hold spaces. */
 const parseProcStatParent = (raw: string): number | null => {
   const parent = Number(
@@ -407,19 +413,17 @@ const parseProcStatParent = (raw: string): number | null => {
  * Reads macOS `ps -E -o pid=,ppid=,command=`, which appends each process's launch environment
  * to its argv with spaces, so an argument that spells the assignment out also matches.
  */
-const parsePsEnvironmentThreads = (
-  raw: string,
-  serverPid: number,
-): ReadonlyMap<number, AgentListener | null> => {
-  const threads = new Map<number, AgentListener | null>();
+const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ProcessEnvironmentRow> => {
+  const threads = new Map<number, ProcessEnvironmentRow>();
   for (const line of raw.split("\n")) {
     const match = /^\s*(\d+)\s+(\d+)\s(.*)$/.exec(line);
     if (!match) continue;
     const value = AGENT_THREAD_ASSIGNMENT.exec(match[3]!)?.[1];
-    threads.set(
-      Number(match[1]),
-      value ? { threadId: ThreadId.make(value), isAgentCli: Number(match[2]) === serverPid } : null,
-    );
+    const ppid = Number(match[2]);
+    threads.set(Number(match[1]), {
+      ppid,
+      threadId: value ? ThreadId.make(value) : null,
+    });
   }
   return threads;
 };
@@ -561,6 +565,65 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   // servers it left may still run. So does startup, for agents that ran before a restart.
   let agentScanPending = true;
 
+  const readPsAgentThreads = Effect.fn("PortDiscovery.readPsAgentThreads")(function* (
+    pids: ReadonlyArray<number>,
+  ) {
+    const rows = new Map<number, ProcessEnvironmentRow>();
+    const visited = new Set<number>();
+    let pending = pids;
+    let failed = false;
+    // macOS loses ps environment output when a tool such as Rspack sets process.title.
+    for (let depth = 0; pending.length > 0 && depth < AGENT_ANCESTOR_LIMIT; depth += 1) {
+      for (const pid of pending) visited.add(pid);
+      const result = yield* processRunner
+        .run({
+          command: "ps",
+          args: ["-E", "-ww", "-o", "pid=,ppid=,command=", "-p", pending.join(",")],
+          timeout: Duration.millis(PS_TIMEOUT_MS),
+          maxOutputBytes: PS_MAX_OUTPUT_BYTES,
+        })
+        .pipe(Effect.option);
+      if (Option.isNone(result)) {
+        agentScanPending = true;
+        failed = true;
+        break;
+      }
+      const read = parsePsEnvironmentThreads(result.value.stdout);
+      for (const [pid, row] of read) rows.set(pid, row);
+      pending = [
+        ...new Set(
+          [...read.values()].flatMap(({ ppid, threadId }) =>
+            threadId === null && ppid > 1 && ppid !== process.pid && !visited.has(ppid)
+              ? [ppid]
+              : [],
+          ),
+        ),
+      ];
+    }
+    const threads = new Map<number, AgentListener | null>();
+    for (const pid of pids) {
+      const original = rows.get(pid);
+      if (!original) continue;
+      let row = original;
+      const ancestors = new Set([pid]);
+      while (row.threadId === null && row.ppid !== process.pid && !ancestors.has(row.ppid)) {
+        ancestors.add(row.ppid);
+        const parent = rows.get(row.ppid);
+        if (!parent) break;
+        row = parent;
+      }
+      if (row.threadId !== null) {
+        threads.set(pid, {
+          threadId: row.threadId,
+          isAgentCli: original.ppid === process.pid,
+        });
+      } else if (!failed) {
+        threads.set(pid, null);
+      }
+    }
+    return threads;
+  });
+
   const readAgentThreads = Effect.fn("PortDiscovery.readAgentThreads")(function* (
     pids: ReadonlyArray<number>,
   ) {
@@ -583,20 +646,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         ? new Map()
         : hostPlatform === "linux"
           ? new Map(yield* Effect.forEach(unread, readProcListener, { concurrency: 16 }))
-          : yield* processRunner
-              .run({
-                command: "ps",
-                args: ["-E", "-ww", "-o", "pid=,ppid=,command=", "-p", unread.join(",")],
-                timeout: Duration.millis(PS_TIMEOUT_MS),
-                maxOutputBytes: PS_MAX_OUTPUT_BYTES,
-              })
-              .pipe(
-                Effect.map((result) => parsePsEnvironmentThreads(result.stdout, process.pid)),
-                Effect.orElseSucceed(() => {
-                  agentScanPending = true;
-                  return new Map();
-                }),
-              );
+          : yield* readPsAgentThreads(unread);
     const next = new Map<number, AgentListener | null>();
     for (const pid of pids) {
       const listener = cached.has(pid) ? cached.get(pid) : read.get(pid);
