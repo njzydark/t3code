@@ -5678,5 +5678,15 @@
   "1a1beecff68a6e61": "验证 Google 账户",
   "99451a5d2d40440f": "已由 {by} 撤回。",
   "3ee30a50b70fffab": "已由 {by} 撤回：{reason}",
-  "201490988858b511": "已由 {by} 撤回"
+  "201490988858b511": "已由 {by} 撤回",
+  "2689839de807d3d6": "Self-hosted relay",
+  "9732fd58eeda1ca0": "Self-hosted notifications unavailable",
+  "3dcceae18e042ae6": "Check notification permissions, the Relay's APNs configuration, and this app's signing identity.",
+  "55a642921c78db84": "Self-hosted Relay",
+  "5c69c76727952c4f": "Push service",
+  "753c812175e64c92": "Allow notifications on this device",
+  "bc47e24c55e14b85": "Use self-hosted push",
+  "9cc699465bf1f6ae": "Requires push to be enabled on your Relay with credentials matching this app. Independent of T3 Connect.",
+  "d22ddb62f839d929": "Self-hosted Live Activities",
+  "432b3f4a378ab0cc": "iOS device"
 }

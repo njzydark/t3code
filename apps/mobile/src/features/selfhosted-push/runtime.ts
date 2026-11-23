@@ -1,3 +1,5 @@
+import { msg } from "gt-react-native";
+import { m } from "../../i18n/messages";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as Option from "effect/Option";
@@ -129,7 +131,7 @@ async function reconcileActivityNow(relayUrl: string, expectedGeneration: number
       selfHostedActivity.start(
         snapshot.aggregate ?? {
           title: "T3 Code",
-          subtitle: "Agent work in progress",
+          subtitle: m(msg("Agent work in progress")),
           activeCount: 1,
           updatedAt: new Date().toISOString(),
           activities: [],
@@ -211,7 +213,7 @@ async function refresh(expectedGeneration: number) {
     token?.type === "ios" && typeof token.data === "string" ? token.data : undefined;
   const payload = makeRelayDeviceRegistrationRequest({
     deviceId,
-    label: Constants.deviceName ?? "iOS device",
+    label: Constants.deviceName ?? m(msg("iOS device")),
     platform: "ios",
     iosMajorVersion: Number.parseInt(String(Platform.Version), 10),
     appVersion: Constants.expoConfig?.version,

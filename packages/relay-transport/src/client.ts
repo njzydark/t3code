@@ -137,6 +137,10 @@ export class EncryptedRelayClient {
     return this.addresses.has(route);
   }
 
+  addressForRoute(route: string): RelayAddress | undefined {
+    return this.addresses.get(route);
+  }
+
   forget(route: string) {
     this.disconnect(route);
     this.addresses.delete(route);
@@ -338,6 +342,8 @@ export class RelayWebSocket extends EventTarget {
   private closeCode = 1006;
   private closeReason = "";
   private messageConsumer: ((bytes: Uint8Array, binary: boolean) => Promise<void>) | undefined;
+  private reading: Promise<void> | undefined;
+  private resumeReading: (() => void) | undefined;
   readonly url: string;
 
   constructor(client: EncryptedRelayClient, url: string, protocols?: string | string[]) {
@@ -388,11 +394,24 @@ export class RelayWebSocket extends EventTarget {
     return this.writing;
   }
 
+  pause() {
+    this.reading ??= new Promise<void>((resolve) => {
+      this.resumeReading = resolve;
+    });
+  }
+
+  resume() {
+    this.resumeReading?.();
+    this.resumeReading = undefined;
+    this.reading = undefined;
+  }
+
   close(code = 1000, reason = "") {
     if (this.readyState >= 2) return;
     if (new TextEncoder().encode(reason).length > 123)
       throw new Error("WebSocket close reason is too long.");
     this.readyState = 2;
+    this.resume();
     this.closeCode = code;
     this.closeReason = reason;
     void this.writing
@@ -412,6 +431,7 @@ export class RelayWebSocket extends EventTarget {
   private finish() {
     if (this.readyState === 3) return;
     this.readyState = 3;
+    this.resume();
     this.bufferedAmount = 0;
     // Hermes provides Event but some native runtimes do not provide CloseEvent.
     const event = Object.assign(new Event("close"), {
@@ -435,6 +455,14 @@ export class RelayWebSocket extends EventTarget {
     if (first.done || first.value.kind !== FrameKind.Head)
       throw new Error("Missing relay WebSocket response.");
     const head = readJson(first.value.payload);
+    if (isRecord(head) && head.open === false) {
+      this.dispatchEvent(
+        Object.assign(new Event("rejection"), {
+          status: head.status,
+          headers: [...decodeHeaders(head.headers)],
+        }),
+      );
+    }
     if (!isRecord(head) || head.open !== true || typeof head.protocol !== "string")
       throw new Error("Relay WebSocket was rejected.");
     this.protocol = head.protocol;
@@ -445,6 +473,7 @@ export class RelayWebSocket extends EventTarget {
     await readSocketMessages(
       stream,
       async (bytes, binary) => {
+        await this.reading;
         if (this.messageConsumer) {
           await this.messageConsumer(bytes, binary);
           return;
@@ -457,6 +486,7 @@ export class RelayWebSocket extends EventTarget {
         const message = Object.assign(new Event("message"), { data }) as MessageEvent;
         this.dispatchEvent(message);
         this.onmessage?.(message);
+        await this.reading;
       },
       (head) => {
         if (
