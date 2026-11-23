@@ -181,8 +181,7 @@ function uploadBytes(input: {
           reader.releaseLock();
         }
         input.onProgress(1);
-      })
-      ;
+      });
   }
   const xhr = new XMLHttpRequest();
   return new Promise<void>((resolve, reject) => {

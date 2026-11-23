@@ -1,7 +1,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeWS from "@effect/platform-node/NodeWS";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type SelfHostedRelayAddress } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import { expect, it } from "@effect/vitest";
@@ -95,6 +95,7 @@ const makeTunnel = (
   /** A function answers each access request with its current value. */
   tunnelUrl: string | null | (() => string | null),
   host?: HostLayer,
+  relay?: SelfHostedRelayAddress,
 ) =>
   Effect.gen(function* () {
     const accessRequests = yield* Queue.unbounded<string>();
@@ -126,6 +127,7 @@ const makeTunnel = (
         tunnel.resolveAccess({
           requestId,
           url: typeof tunnelUrl === "function" ? tunnelUrl() : tunnelUrl,
+          ...(relay ? { relay } : {}),
         }),
       ),
       Effect.forever,
@@ -573,15 +575,30 @@ const listenRefusingEndpoint = (headers: Record<string, string>) =>
   );
 
 it.effect.each([
-  { case: "the environment reports nothing on the probe port", refused: true },
-  { case: "the tunnel fails for another reason", refused: false },
-])("decides a forward's machine only on proof: $case", ({ refused }) =>
+  {
+    case: "the environment reports nothing on the probe port",
+    refused: true,
+    mismatchedRelay: false,
+  },
+  { case: "the tunnel fails for another reason", refused: false, mismatchedRelay: false },
+  { case: "the relay URL does not match its paired host", refused: false, mismatchedRelay: true },
+])("decides a forward's machine only on proof: $case", ({ refused, mismatchedRelay }) =>
   Effect.gen(function* () {
     const endpoint = yield* listenRefusingEndpoint(
-      refused ? { "x-t3-tunnel-port-refused": "1" } : {},
+      refused || mismatchedRelay ? { "x-t3-tunnel-port-refused": "1" } : {},
     );
     const remotePort = yield* unusedPort;
-    const tunnel = yield* makeTunnel(`ws://127.0.0.1:${addressPort(endpoint)}/api/preview/tunnel`);
+    const tunnel = yield* makeTunnel(
+      `ws://127.0.0.1:${addressPort(endpoint)}/api/preview/tunnel`,
+      undefined,
+      mismatchedRelay
+        ? {
+            relayUrl: "https://relay.example.test",
+            route: "1234567890abcdef1234567890abcdef",
+            peerId: "pinned-host",
+          }
+        : undefined,
+    );
     const result = yield* tunnel
       .forward({ environmentId: EnvironmentId.make("remote"), remotePort })
       .pipe(Effect.result);

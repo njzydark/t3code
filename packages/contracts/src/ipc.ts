@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import type { DatabaseMigrationProgress } from "./server.ts";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
+import { SelfHostedRelayAddress } from "./selfHostedRelay.ts";
 
 import { SnapShotSource } from "./chatAttachment.ts";
 import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -1008,6 +1009,7 @@ export const DesktopPreviewTunnelAccessResolutionInputSchema = Schema.Struct({
   requestId: Schema.String,
   /** The environment's tunnel WebSocket URL with its ticket, or null when it cannot be reached. */
   url: Schema.NullOr(Schema.String),
+  relay: Schema.optional(SelfHostedRelayAddress),
 });
 
 /** A loopback port of another environment, reachable on this machine's 127.0.0.1. */
@@ -1370,7 +1372,11 @@ export interface DesktopPreviewBridge {
   onTunnelAccessRequest: (
     listener: (request: DesktopPreviewTunnelAccessRequest) => void,
   ) => () => void;
-  resolveTunnelAccess: (requestId: string, url: string | null) => Promise<void>;
+  resolveTunnelAccess: (
+    requestId: string,
+    url: string | null,
+    relay?: SelfHostedRelayAddress,
+  ) => Promise<void>;
   /** Forwards an environment's loopback port to this machine until stopped or the app quits. */
   forwardPort: (environmentId: EnvironmentId, remotePort: number) => Promise<DesktopPortForward>;
   stopPortForward: (environmentId: EnvironmentId, remotePort: number) => Promise<void>;

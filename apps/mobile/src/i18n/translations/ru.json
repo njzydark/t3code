@@ -5780,5 +5780,15 @@
   "99451a5d2d40440f": "Отозван: {by}.",
   "3ee30a50b70fffab": "Отозван ({by}): {reason}",
   "201490988858b511": "отозван: {by}",
-  "46d614fa7b4bf1e5": "Запуски воркфлоу"
+  "46d614fa7b4bf1e5": "Запуски воркфлоу",
+  "bc47e24c55e14b85": "Use self-hosted push",
+  "432b3f4a378ab0cc": "iOS device",
+  "9732fd58eeda1ca0": "Self-hosted notifications unavailable",
+  "5c69c76727952c4f": "Push service",
+  "9cc699465bf1f6ae": "Requires push to be enabled on your Relay with credentials matching this app. Independent of T3 Connect.",
+  "55a642921c78db84": "Self-hosted Relay",
+  "753c812175e64c92": "Allow notifications on this device",
+  "d22ddb62f839d929": "Self-hosted Live Activities",
+  "3dcceae18e042ae6": "Check notification permissions, the Relay's APNs configuration, and this app's signing identity.",
+  "2689839de807d3d6": "Self-hosted relay"
 }

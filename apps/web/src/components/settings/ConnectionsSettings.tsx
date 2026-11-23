@@ -1441,7 +1441,7 @@ function ConnectionsSettingsContent({
             <SelfHostedRelaySettings
               key={accessEnvironmentId}
               environmentId={accessEnvironmentId}
-              environmentLabel={accessEnvironment?.label ?? "This machine"}
+              environmentLabel={accessEnvironment?.label ?? gt("This machine")}
             />
             {accessEnvironment ? (
               <details className="group px-3 sm:px-4">

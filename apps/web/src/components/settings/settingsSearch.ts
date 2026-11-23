@@ -1482,9 +1482,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "self-hosted-relay",
-    title: "Self-hosted relay",
+    title: msg("Self-hosted relay"),
     to: "/settings/access",
-    searchTerms: ["relay vps host encrypted registration token connect pairing self hosted"],
+    searchTerms: [msg("relay vps host encrypted registration token connect pairing self hosted")],
   },
   {
     id: "remote-environments",

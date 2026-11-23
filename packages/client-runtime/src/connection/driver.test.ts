@@ -107,6 +107,8 @@ describe("ConnectionDriver self-hosted relay recovery", () => {
             authorizeBearer: unused,
             authorizeDpop: unused,
             authorizeDpopHttp: unused,
+            authorizeDirectDpop: unused,
+            authorizeDirectDpopHttp: unused,
             renewDpopBeforeExpiry: unused,
             rememberCheckedDescriptor: () => Effect.void,
           }),

@@ -24,6 +24,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { previewEnvironment } from "~/state/preview";
 import { readPreviewTunnelUrl } from "~/state/previewTunnel";
 import { useEnvironmentScope } from "~/state/session";
+import { relayNetwork } from "~/lib/selfHostedRelay";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserDefaults } from "./browserDefaults";
@@ -121,9 +122,11 @@ export function startElectronBrowserHost(): () => void {
     }),
     preview.onOpenLink(openLinkInPreview),
     preview.onTunnelAccessRequest(({ requestId, environmentId }) => {
-      void readPreviewTunnelUrl(environmentId).then((url) =>
-        preview.resolveTunnelAccess(requestId, url),
-      );
+      void readPreviewTunnelUrl(environmentId).then((url) => {
+        const route = url ? relayNetwork.transport.routeForUrl(url) : null;
+        const relay = route ? relayNetwork.transport.addressForRoute(route) : undefined;
+        return preview.resolveTunnelAccess(requestId, route && !relay ? null : url, relay);
+      });
     }),
   ];
   return () => {
