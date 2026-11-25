@@ -1,3 +1,5 @@
+import { SelfHostedRelayMcpTokenPanel } from "../settings/SelfHostedRelayMcpSettings";
+import { selfHostedRelayStatus } from "~/state/selfHostedRelay";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
@@ -86,11 +88,24 @@ export function UseInAnotherAppDialogHost() {
 function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentId | null }) {
   const { environment, label } = useAccessEnvironment(requested);
   const gt = useGT();
+  const canReadRelay = useEnvironmentScope(environment?.environmentId ?? null, AuthRelayReadScope);
+  const selfHosted = useEnvironmentQuery(
+    environment && canReadRelay
+      ? selfHostedRelayStatus({ environmentId: environment.environmentId, input: {} })
+      : null,
+  );
   const title = `${gt("Use T3 Code in another app (MCP)")} · ${label ?? "T3 Code"}`;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <WizardPopup>
-        {environment !== null && hasCloudPublicConfig() ? (
+        {environment !== null && selfHosted.data?.enabled ? (
+          <>
+            <WizardHeader title={title} />
+            <WizardPanel>
+              <SelfHostedRelayMcpTokenPanel environmentId={environment.environmentId} />
+            </WizardPanel>
+          </>
+        ) : environment !== null && hasCloudPublicConfig() ? (
           <Wizard key={environment.environmentId} environment={environment} title={title} />
         ) : (
           <>

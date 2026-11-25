@@ -12992,5 +12992,18 @@
   "31426dda1da03064": "Relay connection actions",
   "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
   "6e9b12a55d970d4e": "Not configured",
-  "7a6edc5d78592a76": "The relay operation failed."
+  "7a6edc5d78592a76": "The relay operation failed.",
+  "b96de95f92a8eeeb": "MCP URL",
+  "fc4c1acbd708e980": "MCP トークンを作成できませんでした。",
+  "2bc30b6ab37805be": "トークンを作成",
+  "a56e6900df35a4fb": "エージェントの権限を選択してください。トークンは一度だけ表示されます。",
+  "007fd2aa13a38118": "MCP トークンをコピーできませんでした。",
+  "eb28894b5db17bb4": "MCP トークン",
+  "93eca6c0c52fc6ea": "URL とトークンをコピー",
+  "02b38ff73121821c": "有効期限: {date}",
+  "b3e6f662fc3e4f2d": "MCP クライアント",
+  "fce4ad679a63ecd9": "URL とトークンで外部エージェントに接続します。「承認済みクライアント」でアクセスを取り消せます。",
+  "a793a7a0ac6f2476": "クライアント名",
+  "d951fe94dcf0553f": "アクセス権",
+  "fc73ae0b15389efa": "ペアリング"
 }

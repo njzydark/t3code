@@ -90,6 +90,11 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 - With Network access enabled, self-hosted relay clients may use the host's
   advertised private addresses with their DPoP-bound session. Direct routes keep
   the pairing's scopes and revocation; HTTP exposes traffic to the local network.
+- The self-hosted relay's public MCP and peer-link gateway terminates HTTPS.
+  Its operator can read these requests and credentials. Private paired-app
+  traffic remains Noise encrypted. Registration-token groups expose an online
+  directory, not environment sessions; hosts enforce MCP grants and revocation.
+  The gateway forwards only allowlisted paths to its fixed loopback T3 server.
 - `access-control-allow-origin: *` on the environment API. Auth is a bearer
   header, so the wildcard grants nothing a caller without a token lacks.
 - Rendered Markdown loads remote images and media from the host its author

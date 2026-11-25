@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
-import { AuthPairingCredentialResult } from "./auth.ts";
+import { EnvironmentId } from "./baseSchemas.ts";
+import { AuthMcpClientAccess, AuthPairingCredentialResult } from "./auth.ts";
 import { RelayAgentActivityAggregateState, RelayDeviceRegistrationRequest } from "./relay.ts";
 
 export const SelfHostedRelayAddress = Schema.Struct({
@@ -44,6 +45,29 @@ export class SelfHostedPushError extends Schema.TaggedError<SelfHostedPushError>
     return "The self-hosted push service is unavailable or does not match this app's push identity.";
   }
 }
+
+export const SelfHostedRelayEnvironment = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  route: Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/)),
+  peerId: Schema.String,
+});
+export const SelfHostedRelayDirectory = Schema.Struct({
+  relayUrl: Schema.String,
+  environments: Schema.Array(SelfHostedRelayEnvironment),
+});
+export type SelfHostedRelayDirectory = typeof SelfHostedRelayDirectory.Type;
+export const SelfHostedRelayMcpTokenInput = Schema.Struct({
+  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  access: AuthMcpClientAccess,
+});
+export type SelfHostedRelayMcpTokenInput = typeof SelfHostedRelayMcpTokenInput.Type;
+export const SelfHostedRelayMcpTokenResult = Schema.Struct({
+  url: Schema.String,
+  token: Schema.String,
+  expiresAt: Schema.DateTimeUtc,
+});
+export type SelfHostedRelayMcpTokenResult = typeof SelfHostedRelayMcpTokenResult.Type;
 
 export const SelfHostedRelayStatus = Schema.Struct({
   relayUrl: Schema.String,

@@ -1,5 +1,10 @@
+import * as DateTime from "effect/DateTime";
 import {
   AuthStandardClientScopes,
+  mcpClientScopes,
+  SelfHostedRelayDirectory,
+  type SelfHostedRelayMcpTokenInput,
+  type SelfHostedRelayMcpTokenResult,
   SelfHostedRelayOperationError,
   type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
@@ -7,7 +12,7 @@ import {
   type SelfHostedRelayStatus,
   type SelfHostedRelayUpdate,
 } from "@t3tools/contracts";
-import { validateRelayAddress } from "@t3tools/relay-transport/protocol";
+import { relayPublicBaseUrl, validateRelayAddress } from "@t3tools/relay-transport/protocol";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -19,8 +24,13 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import type * as Stream from "effect/Stream";
+import * as Stream from "effect/Stream";
 import { HttpServer } from "effect/http";
+
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as Schedule from "effect/Schedule";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -38,6 +48,7 @@ import {
 type StoredConfig = typeof StoredConfig.Type;
 const encodeStoredConfig = Schema.encodeEffect(StoredConfig);
 const decodeStoredConfig = Schema.decodeEffect(StoredConfig);
+const decodeDirectory = Schema.decodeUnknownEffect(SelfHostedRelayDirectory);
 const emptyStatus: SelfHostedRelayStatus = {
   relayUrl: "",
   enabled: false,
@@ -50,6 +61,11 @@ export class SelfHostedRelayHost extends Context.Service<
   SelfHostedRelayHost,
   {
     readonly changes: Stream.Stream<SelfHostedRelayStatus>;
+    readonly directory: Stream.Stream<SelfHostedRelayDirectory>;
+    readonly mcpToken: (
+      scopes: ReadonlyArray<AuthEnvironmentScope>,
+      input: SelfHostedRelayMcpTokenInput,
+    ) => Effect.Effect<SelfHostedRelayMcpTokenResult, SelfHostedRelayOperationError>;
     readonly update: (
       input: SelfHostedRelayUpdate,
     ) => Effect.Effect<SelfHostedRelayStatus, SelfHostedRelayOperationError>;
@@ -63,6 +79,8 @@ export class SelfHostedRelayHost extends Context.Service<
 
 const make = Effect.gen(function* () {
   const relay = yield* SelfHostedRelay.SelfHostedRelay;
+  const http = yield* HttpClient.HttpClient;
+  const environment = yield* ServerEnvironment.ServerEnvironment;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const config = yield* ServerConfig.ServerConfig;
   const auth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -214,6 +232,47 @@ const make = Effect.gen(function* () {
     };
   }, lock.withPermit);
 
+  const mcpToken = Effect.fn("SelfHostedRelayHost.mcpToken")(function* (
+    scopes: ReadonlyArray<AuthEnvironmentScope>,
+    input: SelfHostedRelayMcpTokenInput,
+  ) {
+    if (!saved?.enabled)
+      return yield* new SelfHostedRelayOperationError({ operation: "unavailable" });
+    if (!mcpClientScopes(input.access).every((scope) => scopes.includes(scope)))
+      return yield* new SelfHostedRelayOperationError({ operation: "permissions" });
+    const issued = yield* auth
+      .issueMcpClientSession({
+        label: input.label,
+        access: input.access,
+        peerLink: false,
+        client: { deviceType: "bot" },
+      })
+      .pipe(Effect.mapError(() => new SelfHostedRelayOperationError({ operation: "storage" })));
+    return {
+      url: `${relayPublicBaseUrl(saved.relayUrl, yield* environment.getEnvironmentId)}/mcp`,
+      token: issued.token,
+      expiresAt: DateTime.toUtc(issued.expiresAt),
+    };
+  });
+  const readDirectory = Effect.gen(function* () {
+    const config = saved;
+    if (!config?.enabled) return { relayUrl: "", environments: [] };
+    const response = yield* HttpClientRequest.get(
+      new URL("/v1/environments", config.relayUrl).href,
+    ).pipe(
+      HttpClientRequest.setHeader("authorization", `Bearer ${config.registrationToken}`),
+      http.execute,
+      Effect.timeout("10 seconds"),
+    );
+    if (response.status !== 200) return { relayUrl: config.relayUrl, environments: [] };
+    const body = yield* response.json;
+    return yield* decodeDirectory({
+      ...(typeof body === "object" && body !== null ? body : {}),
+      relayUrl: config.relayUrl,
+    });
+  }).pipe(Effect.orElseSucceed(() => ({ relayUrl: saved?.relayUrl ?? "", environments: [] })));
+  const directory = Stream.fromEffectSchedule(readDirectory, Schedule.spaced("30 seconds"));
+
   yield* secrets.get(CONFIG_SECRET).pipe(
     Effect.flatMap((bytes) =>
       Option.isNone(bytes)
@@ -233,7 +292,14 @@ const make = Effect.gen(function* () {
       }),
     ),
   );
-  return SelfHostedRelayHost.of({ changes: SubscriptionRef.changes(state), update, forget, pair });
+  return SelfHostedRelayHost.of({
+    directory,
+    mcpToken,
+    changes: SubscriptionRef.changes(state),
+    update,
+    forget,
+    pair,
+  });
 });
 
 export const layer = Layer.effect(SelfHostedRelayHost, make);

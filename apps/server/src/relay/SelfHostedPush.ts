@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { validateRelayAddress } from "@t3tools/relay-transport/protocol";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -36,6 +37,7 @@ import {
   resolveAgentAwarenessRelayActiveThreadIds,
   resolveAgentAwarenessRelayPublishSnapshot,
   shouldPublishAgentAwarenessEvent,
+  makeSubagentRequestTracker,
 } from "./AgentAwarenessRelay.ts";
 
 export class SelfHostedPush extends Context.Service<
@@ -89,6 +91,14 @@ const make = Effect.gen(function* () {
   const published = new Map<ThreadId, string>();
   const confirmAfter = new Map<ThreadId, number>();
   const heldCompletions = new Set<ThreadId>();
+  let enqueueTopLevelPublish: (id: ThreadId) => Effect.Effect<void> = () => Effect.void;
+  const subagentTracker = makeSubagentRequestTracker(
+    (id) =>
+      threads
+        .getAgentAwarenessSnapshot(id)
+        .pipe(Effect.map((snapshot) => snapshot.threads[0] ?? null)),
+    (id) => enqueueTopLevelPublish(id),
+  );
   let confirmLater: (threadId: ThreadId) => Effect.Effect<void> = () => Effect.void;
 
   const sendTo = Effect.fn("SelfHostedPush.sendTo")(
@@ -154,15 +164,30 @@ const make = Effect.gen(function* () {
     function* (threadId: ThreadId) {
       if (!available) return;
       const thread = (yield* threads.getAgentAwarenessSnapshot(threadId)).threads[0];
+      yield* subagentTracker.track(threadId, thread ?? null);
+      const pending = yield* subagentTracker.current(threadId);
       const visible = thread && thread.archivedAt === null && isListedThreadLineage(thread.lineage);
       const project = visible ? yield* projects.getById(thread.projectId) : Option.none();
-      const state = resolveAgentAwarenessRelayPublishSnapshot({
+      const snapshot = resolveAgentAwarenessRelayPublishSnapshot({
         environmentId: yield* environment.getEnvironmentId,
         thread: visible ? Option.some(thread) : Option.none(),
         project,
-        pendingSubagentRequest: null,
-      }).state;
-      const identity = state ? yield* encodeIdentity({ ...state, updatedAt: "" }) : "null";
+        pendingSubagentRequest: pending,
+      });
+      const attentionId = snapshot.subagentWait?.requestId ?? thread?.pendingRuntimeRequest?.id;
+      const state =
+        snapshot.state === null
+          ? null
+          : {
+              ...snapshot.state,
+              ...(snapshot.subagentWait
+                ? { updatedAt: DateTime.formatIso(snapshot.subagentWait.updatedAt) }
+                : {}),
+              ...(attentionId ? { attentionId } : {}),
+            };
+      const identity = state
+        ? yield* encodeIdentity({ ...state, updatedAt: "", attentionId })
+        : "null";
       if (published.get(threadId) === identity) return;
       if (state === null && !published.has(threadId) && !heldCompletions.has(threadId)) return;
       if (state === null || state.phase === "completed") {
@@ -209,6 +234,7 @@ const make = Effect.gen(function* () {
     ),
   );
   const worker = yield* makeAgentAwarenessPublishWorker(publish);
+  enqueueTopLevelPublish = worker.enqueue;
   confirmLater = (threadId) =>
     Effect.sleep("5 seconds").pipe(
       Effect.andThen(worker.enqueue(threadId)),
@@ -217,13 +243,22 @@ const make = Effect.gen(function* () {
     );
   const enqueueActive = Effect.gen(function* () {
     const snapshot = yield* threads.getAgentAwarenessSnapshot();
-    if (snapshot.threads.length === 0) return;
+    const liveChildren = yield* Effect.forEach(
+      (yield* threads.listActiveShellIndex()).filter(
+        (thread) => thread.lineage.relationshipToParent === "subagent" && thread.mayBeLive,
+      ),
+      (thread) =>
+        threads
+          .getAgentAwarenessSnapshot(thread.id)
+          .pipe(Effect.map((value) => value.threads[0] ?? null)),
+    );
+    if (snapshot.threads.length === 0 && liveChildren.every((thread) => thread === null)) return;
     const projectSnapshot = yield* projects.snapshot;
     const ids = resolveAgentAwarenessRelayActiveThreadIds({
       environmentId: yield* environment.getEnvironmentId,
       startedAt,
       projects: projectSnapshot.projects,
-      threads: snapshot.threads,
+      threads: [...snapshot.threads, ...liveChildren.filter((thread) => thread !== null)],
     });
     for (const id of ids) {
       published.delete(id);

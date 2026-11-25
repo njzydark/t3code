@@ -56,6 +56,26 @@ function supervisorState(overrides: Partial<SupervisorConnectionState>): Supervi
 }
 
 describe("connection presentation", () => {
+  it("copies the standard public path for a self-hosted environment", () => {
+    const profile = Option.getOrThrow(ENTRY.profile) as BearerConnectionProfile;
+    const entry = {
+      ...ENTRY,
+      profile: Option.some(
+        new BearerConnectionProfile({
+          ...profile,
+          httpBaseUrl: "https://1234567890abcdef1234567890abcdef.t3-relay.invalid/",
+          selfHostedRelay: {
+            relayUrl: "https://relay.example.com",
+            route: "1234567890abcdef1234567890abcdef",
+            peerId: "pinned-host",
+          },
+        }),
+      ),
+    };
+    expect(environmentMcpUrl({ entry })).toBe(
+      "https://relay.example.com/v1/environments/environment-1/mcp",
+    );
+  });
   it("copies the T3 Connect MCP address first, then the route this device is connected over", () => {
     const route = (connectionId: string, httpBaseUrl: string): ConnectionRoute => {
       const target = new BearerConnectionTarget({ ...TARGET, connectionId });

@@ -25,3 +25,10 @@ export const pairSelfHostedRelay = createEnvironmentRpcCommand(connectionAtomRun
   label: "self-hosted-relay:pair",
   tag: WS_METHODS.selfHostedRelayPair,
 });
+
+import { createSelfHostedRelayAtoms } from "@t3tools/client-runtime/state/selfHostedRelay";
+import { environmentCatalog } from "../connection/catalog";
+export const selfHostedRelayClients = createSelfHostedRelayAtoms({
+  runtime: connectionAtomRuntime,
+  catalog: environmentCatalog.catalogValueAtom,
+});

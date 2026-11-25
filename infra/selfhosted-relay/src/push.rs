@@ -26,6 +26,7 @@ const MAX_JOBS: i64 = 8192;
 
 #[derive(Clone)]
 pub struct Push {
+    broker: Option<crate::broker::Broker>,
     inner: Arc<Mutex<Store>>,
     credentials: Arc<Credentials>,
     token_digest: [u8; 32],
@@ -58,6 +59,8 @@ struct Data {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Device {
+    #[serde(default)]
+    group: Option<String>,
     environment_id: String,
     session_id: String,
     registration: Registration,
@@ -97,6 +100,8 @@ struct Activity {
     model_title: String,
     phase: String,
     updated_at: String,
+    #[serde(default)]
+    attention_id: Option<String>,
     deep_link: String,
 }
 
@@ -130,6 +135,8 @@ impl Activity {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
+    #[serde(skip)]
+    group: Option<String>,
     environment_id: String,
     active_session_ids: Vec<String>,
     #[serde(flatten)]
@@ -270,11 +277,17 @@ impl Push {
             Err(error) => return Err(error.into()),
         };
         Ok(Self {
+            broker: None,
             inner: Arc::new(Mutex::new(Store { db, data })),
             credentials: Arc::new(credentials),
             token_digest: digest(token),
             notify: Arc::new(Notify::new()),
         })
+    }
+
+    pub fn with_broker(mut self, broker: crate::broker::Broker) -> Self {
+        self.broker = Some(broker);
+        self
     }
 
     pub fn router(&self) -> Router {
@@ -300,6 +313,13 @@ impl Push {
         }
         let mut store = self.inner.lock().await;
         let mut data = store.data.clone();
+        for device in data
+            .devices
+            .iter_mut()
+            .filter(|d| d.environment_id == input.environment_id)
+        {
+            device.group.clone_from(&input.group);
+        }
         let now = now();
         data.devices.retain(|device| {
             now.saturating_sub(device.last_seen) < 30 * 86400
@@ -378,6 +398,7 @@ impl Push {
                     return Err(StatusCode::SERVICE_UNAVAILABLE);
                 }
                 let mut device = Device {
+                    group: input.group.clone(),
                     environment_id: input.environment_id.clone(),
                     session_id,
                     registration,
@@ -409,7 +430,7 @@ impl Push {
                 }
                 data.devices[index].activity_token = Some(activity_push_token.clone());
                 data.devices[index].last_seen = now;
-                let aggregate = aggregate_for(&data, &device_id, now);
+                let aggregate = aggregate_for(&data, &device_id, now, input.group.as_deref());
                 jobs.push(live_job(activity_push_token, aggregate.as_ref(), None, now));
             }
             Operation::Unregister {
@@ -432,7 +453,7 @@ impl Push {
                 device_id,
             } => {
                 session_device(&session_id, &device_id, &data)?;
-                response = json!({"aggregate": aggregate_for(&data, &device_id, now)});
+                response = json!({"aggregate": aggregate_for(&data, &device_id, now, input.group.as_deref())});
             }
             Operation::Publish { thread_id, state } => {
                 if !valid_id(&thread_id) {
@@ -484,7 +505,12 @@ impl Push {
                         }
                         let alert =
                             changed && alert_allowed(&device.registration.preferences, &state, now);
-                        let aggregate = aggregate_for(&data, &device.registration.device_id, now);
+                        let aggregate = aggregate_for(
+                            &data,
+                            &device.registration.device_id,
+                            now,
+                            device.group.as_deref(),
+                        );
                         let live = device
                             .registration
                             .preferences
@@ -517,8 +543,12 @@ impl Push {
                             && d.registration.preferences.live_activities_enabled
                     }) {
                         if let Some(token) = &device.activity_token {
-                            let aggregate =
-                                aggregate_for(&data, &device.registration.device_id, now);
+                            let aggregate = aggregate_for(
+                                &data,
+                                &device.registration.device_id,
+                                now,
+                                device.group.as_deref(),
+                            );
                             jobs.push(live_job(token.clone(), aggregate.as_ref(), None, now));
                         }
                     }
@@ -530,15 +560,16 @@ impl Push {
                 .devices
                 .iter()
                 .filter(|d| {
-                    d.activity_token.as_ref() == Some(&job.token)
-                        || d.registration.push_token.as_ref() == Some(&job.token)
+                    d.group == input.group
+                        && (d.activity_token.as_ref() == Some(&job.token)
+                            || d.registration.push_token.as_ref() == Some(&job.token))
                 })
                 .map(|d| &d.registration.device_id)
                 .collect();
             job.bindings = data
                 .devices
                 .iter()
-                .filter(|d| ids.contains(&&d.registration.device_id))
+                .filter(|d| d.group == input.group && ids.contains(&&d.registration.device_id))
                 .map(|d| {
                     (
                         d.environment_id.clone(),
@@ -756,10 +787,29 @@ impl Push {
 async fn handle(
     State(push): State<Push>,
     headers: HeaderMap,
-    Json(request): Json<Request>,
+    Json(mut request): Json<Request>,
 ) -> Result<Json<Value>, StatusCode> {
-    if !push.authorize(&headers) {
+    let authorized = match &push.broker {
+        Some(broker) => headers
+            .get("authorization")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.strip_prefix("Bearer "))
+            .is_some_and(|token| broker.owns_environment(token, &request.environment_id)),
+        None => push.authorize(&headers),
+    };
+    if !authorized {
         return Err(StatusCode::UNAUTHORIZED);
+    }
+    if push.broker.is_some() {
+        request.group = headers
+            .get("authorization")
+            .and_then(|h| h.to_str().ok())
+            .map(|value| {
+                digest(value)
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect()
+            });
     }
     push.apply(request).await.map(Json)
 }
@@ -768,11 +818,11 @@ fn bounded_text(text: &str, limit: usize) -> String {
     text.trim().chars().take(limit).collect()
 }
 
-fn aggregate_for(data: &Data, device_id: &str, now: u64) -> Option<Value> {
+fn aggregate_for(data: &Data, device_id: &str, now: u64, group: Option<&str>) -> Option<Value> {
     let environments: std::collections::HashSet<_> = data
         .devices
         .iter()
-        .filter(|d| d.registration.device_id == device_id)
+        .filter(|d| d.registration.device_id == device_id && d.group.as_deref() == group)
         .map(|d| &d.environment_id)
         .collect();
     let mut rows: Vec<_> = data
@@ -915,9 +965,12 @@ fn job_authorized(job: &Job, data: &Data) -> bool {
 
 fn phase_transition_alerts(previous: &Activity, next: &Activity) -> bool {
     let attention = |phase: &str| matches!(phase, "waiting_for_approval" | "waiting_for_input");
-    previous.phase != next.phase
+    (previous.phase != next.phase
         && !(previous.terminal() && next.terminal())
-        && !(attention(&previous.phase) && attention(&next.phase))
+        && !(attention(&previous.phase) && attention(&next.phase)))
+        || (attention(&next.phase)
+            && next.attention_id.is_some()
+            && previous.attention_id != next.attention_id)
 }
 
 #[cfg(test)]
@@ -972,6 +1025,7 @@ mod tests {
             updated_at: chrono::DateTime::from_timestamp(now() as i64, 0)
                 .unwrap()
                 .to_rfc3339(),
+            attention_id: None,
             deep_link: "/threads/env/thread".into(),
         }
     }
@@ -1153,11 +1207,41 @@ mod tests {
     }
 
     #[test]
+    fn alerts_for_a_new_request_and_isolates_equal_device_ids_between_groups() {
+        let mut previous = state("waiting_for_approval");
+        previous.attention_id = Some("first".into());
+        let mut next = previous.clone();
+        assert!(!phase_transition_alerts(&previous, &next));
+        next.attention_id = Some("second".into());
+        assert!(phase_transition_alerts(&previous, &next));
+        let registration: Registration =
+            serde_json::from_value(registration()["registration"].clone()).unwrap();
+        let mut data = Data::default();
+        for group in ["one", "two"] {
+            data.devices.push(Device {
+                group: Some(group.into()),
+                environment_id: group.into(),
+                session_id: "session".into(),
+                registration: registration.clone(),
+                activity_token: None,
+                last_seen: now(),
+            });
+            let mut row = state("running");
+            row.environment_id = group.into();
+            data.rows.insert(group.into(), row);
+        }
+        let aggregate = aggregate_for(&data, "device", now(), Some("one")).unwrap();
+        assert_eq!(aggregate["activeCount"], 1);
+        assert_eq!(aggregate["activities"][0]["environmentId"], "one");
+    }
+
+    #[test]
     fn limits_multibyte_live_activity_payloads_and_keeps_priority_rows() {
         let mut data = Data::default();
         let device: Registration =
             serde_json::from_value(registration()["registration"].clone()).unwrap();
         data.devices.push(Device {
+            group: None,
             environment_id: "env".into(),
             session_id: "session".into(),
             registration: device,
@@ -1174,7 +1258,7 @@ mod tests {
             row.thread_title = "中文😀".repeat(120);
             data.rows.insert(index.to_string(), row);
         }
-        let aggregate = aggregate_for(&data, "device", now()).unwrap();
+        let aggregate = aggregate_for(&data, "device", now(), None).unwrap();
         assert_eq!(aggregate["activeCount"], 10);
         assert_eq!(aggregate["activities"][0]["phase"], "waiting_for_input");
         let job = live_job("a".repeat(64), Some(&aggregate), None, now());
@@ -1184,6 +1268,6 @@ mod tests {
         waiting.project_title = "中".repeat(120);
         let alerting = live_job("a".repeat(64), Some(&aggregate), Some(&waiting), now());
         assert!(alerting.payload.to_string().len() <= 4096);
-        assert!(aggregate_for(&data, "device", now() + 86401).is_none());
+        assert!(aggregate_for(&data, "device", now() + 86401, None).is_none());
     }
 }

@@ -20,7 +20,11 @@ export T3_RELAY_REGISTRATION_TOKEN="$(openssl rand -hex 32)"
 
 Keep the registration token in your private deployment configuration and use
 the same value on your hosts. Clients receive pairing links rather than this
-token. Load the supplied Docker image, or build it from this checkout:
+token. For separate groups of hosts, set `T3_RELAY_TOKENS` to a JSON object
+instead, for example `{"personal":"<first secret>","work":"<second secret>"}`.
+Generate a different long random secret for each value. Hosts using the same
+secret appear in the same directory; different secrets have separate directories.
+The legacy registration token can be used alongside the map as another group. Load the supplied Docker image, or build it from this checkout:
 
 ```bash
 vp i
@@ -126,6 +130,36 @@ the self-hosted relay. Enable **Settings → Sharing & access → Preview tunnel
 the host and pair with terminal access. Forwarded ports can be stopped from the
 command palette and close when you quit the desktop app.
 
+## Discover other environments
+
+After pairing your first environment, open **Settings → Environments** on web,
+desktop, iOS or Android. Other online environments registered with the same
+relay token appear there. Choose a machine and enter a pairing code issued on
+that machine. The directory refreshes while this screen is open; stopped hosts
+are omitted. Discovery shares names and identities, not authorization: each
+machine still controls its own pairing, permissions and revocation.
+
+## Connect an outside agent with MCP
+
+On an environment configured with the built-in self-hosted relay, open its
+**Self-hosted relay** settings and choose **Create token**. On web and desktop,
+the **Use in another app** command offers the same flow. Choose the agent's
+access level, then copy the URL and token. Keep the token privately; it is
+shown once and expires after 30 days. Revoke it in **Authorized clients** on
+that environment. Creating a replacement does not revoke older tokens.
+
+The URL is `https://relay.example.com/v1/environments/<environment-id>/mcp`.
+Configure an HTTP MCP client to send `Authorization: Bearer <token>` to that
+URL. No browser sign-in, OAuth setup or local bridge is needed. Every host
+has its own MCP URL and scoped token. The registration token groups hosts;
+it is not an MCP token and does not grant agent access to every machine.
+
+To work across machines, enable **Settings → Labs → Linked environments**
+and use T3's existing link flow. Select a paired machine or its public relay
+address and approve the link using its pairing code. Linked agents use the
+upstream tools and permissions; the relay preserves the environment path so
+multiple machines can share the same domain. The other host must remain online.
+
 ## Prefer a local connection
 
 Enable **Network access** on the host to let paired clients use its LAN and
@@ -151,11 +185,18 @@ remain enabled.
 
 ## Trust and compatibility
 
-When using the relay, the host and client establish a Noise encrypted session.
+When using the private app connection, the host and client establish a Noise encrypted session.
 The pairing link pins the host's public identity. The relay forwards encrypted
 traffic and can observe connection addresses, timing and sizes. It does not
 need host private keys or T3 session credentials. Verify pairing links through
 a channel you trust.
+
+Public MCP and linked-environment requests use HTTPS through the relay's
+allowlisted public path gateway. The relay operator can read these requests,
+including their authorization tokens, and must be trusted. The host enforces
+MCP sessions, scopes, expiry and revocation. This gateway exposes only the MCP,
+peer-link and associated discovery/authorization endpoints, not the full T3 API.
+It does not change the encrypted transport used by paired apps.
 
 The browser loads its executable app from the web host. That host must be
 trusted to serve the intended build; encryption cannot protect a browser from
@@ -175,7 +216,8 @@ mode does not publish arbitrary local development ports or rewrite arbitrary
 websites' absolute URLs.
 
 T3 Connect account discovery, guest-link hosting and
-cloud webhook delivery still depend on their existing services. This relay
+cloud webhook delivery still depend on their existing services. The token-group
+directory described above works independently of T3 Connect accounts. This relay
 does not replace WebRTC signaling, STUN or TURN infrastructure. Device media
 and browser previews that rely on those separate paths need their existing
 connectivity. Mobile background execution remains subject to the operating
