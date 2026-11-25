@@ -2912,6 +2912,9 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.selfHostedRelaySubscribe]: () => selfHostedRelayHost.changes,
+        [WS_METHODS.selfHostedRelayDirectory]: () => selfHostedRelayHost.directory,
+        [WS_METHODS.selfHostedRelayMcpToken]: (input) =>
+          selfHostedRelayHost.mcpToken(currentSession.scopes, input),
         [WS_METHODS.selfHostedRelayUpdate]: (input) => selfHostedRelayHost.update(input),
         [WS_METHODS.selfHostedRelayForget]: () => selfHostedRelayHost.forget,
         [WS_METHODS.selfHostedRelayPair]: (input) =>

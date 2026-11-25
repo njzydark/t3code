@@ -423,6 +423,74 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
     .map((thread) => thread.id);
 }
 
+export function makeSubagentRequestTracker<E>(
+  readAwarenessThread: (threadId: ThreadId) => Effect.Effect<AgentAwarenessThread | null, E>,
+  enqueueTopLevelPublish: (threadId: ThreadId) => Effect.Effect<void>,
+) {
+  const subagentRequests = new Map<ThreadId, SubagentRequest>();
+  const findTopLevelThreadId = Effect.fnUntraced(function* (child: AgentAwarenessThread) {
+    const seen = new Set<ThreadId>([child.id]);
+    let current: AgentAwarenessThread | null = child;
+    while (
+      current?.lineage.relationshipToParent === "subagent" ||
+      current?.lineage.sideChat === true
+    ) {
+      const parentId: ThreadId | null = current.lineage.parentThreadId;
+      if (parentId === null || seen.has(parentId)) return null;
+      seen.add(parentId);
+      current = yield* readAwarenessThread(parentId);
+    }
+    return current?.id ?? null;
+  });
+
+  const trackSubagentRequest = Effect.fnUntraced(function* (
+    threadId: ThreadId,
+    threadShell: AgentAwarenessThread | null,
+  ) {
+    const requestId = waitingApprovalId(threadShell);
+    const previous = subagentRequests.get(threadId);
+    // An unchanged wait still republishes its parent: a relink catch-up reaches it only here.
+    if (threadShell === null || requestId === undefined) {
+      if (previous === undefined) return;
+      subagentRequests.delete(threadId);
+      yield* enqueueTopLevelPublish(previous.topLevelThreadId);
+      return;
+    }
+    const topLevelThreadId =
+      previous?.topLevelThreadId ?? (yield* findTopLevelThreadId(threadShell));
+    if (topLevelThreadId === null) return;
+    subagentRequests.set(threadId, { topLevelThreadId, requestId });
+    yield* enqueueTopLevelPublish(topLevelThreadId);
+  });
+
+  // The map can miss a child's update while publishing is off or the relay is
+  // unlinked, so each waiting child is re-read before its parent is published.
+  const currentSubagentRequestFor = Effect.fnUntraced(function* (topLevelThreadId: ThreadId) {
+    let pending: SubagentRequestAwareness | null = null;
+    for (const [childId, entry] of subagentRequests) {
+      if (entry.topLevelThreadId !== topLevelThreadId) continue;
+      const child = yield* readAwarenessThread(childId);
+      const requestId = waitingApprovalId(child);
+      if (child === null || requestId === undefined) {
+        subagentRequests.delete(childId);
+        continue;
+      }
+      if (requestId !== entry.requestId) subagentRequests.set(childId, { ...entry, requestId });
+      // The newest wait is the one to announce.
+      if (pending === null || DateTime.isGreaterThan(child.updatedAt, pending.updatedAt)) {
+        pending = {
+          requestId,
+          updatedAt: child.updatedAt,
+          waitsForInput: child.pendingRuntimeRequest?.kind === "user_input",
+        };
+      }
+    }
+    return pending;
+  });
+
+  return { track: trackSubagentRequest, current: currentSubagentRequestFor };
+}
+
 /** @public */
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -438,7 +506,6 @@ export const make = Effect.gen(function* () {
   // Android keys alerts by phase and time, so a child's unchanged request keeps
   // its first alert time through parent renames, relinks and the parent's own requests.
   const childAlertByThread = new Map<ThreadId, SubagentAlert>();
-  const subagentRequests = new Map<ThreadId, SubagentRequest>();
 
   const readSecretString = (name: string) =>
     secrets
@@ -734,65 +801,8 @@ export const make = Effect.gen(function* () {
 
   // The subagent helpers below are untraced: they run per event inside
   // publishThreadUnsafe, whose span already covers them.
-  const findTopLevelThreadId = Effect.fnUntraced(function* (child: AgentAwarenessThread) {
-    const seen = new Set<ThreadId>([child.id]);
-    let current: AgentAwarenessThread | null = child;
-    while (
-      current?.lineage.relationshipToParent === "subagent" ||
-      current?.lineage.sideChat === true
-    ) {
-      const parentId: ThreadId | null = current.lineage.parentThreadId;
-      if (parentId === null || seen.has(parentId)) return null;
-      seen.add(parentId);
-      current = yield* readAwarenessThread(parentId);
-    }
-    return current?.id ?? null;
-  });
-
-  const trackSubagentRequest = Effect.fnUntraced(function* (
-    threadId: ThreadId,
-    threadShell: AgentAwarenessThread | null,
-  ) {
-    const requestId = waitingApprovalId(threadShell);
-    const previous = subagentRequests.get(threadId);
-    // An unchanged wait still republishes its parent: a relink catch-up reaches it only here.
-    if (threadShell === null || requestId === undefined) {
-      if (previous === undefined) return;
-      subagentRequests.delete(threadId);
-      yield* enqueueTopLevelPublish(previous.topLevelThreadId);
-      return;
-    }
-    const topLevelThreadId =
-      previous?.topLevelThreadId ?? (yield* findTopLevelThreadId(threadShell));
-    if (topLevelThreadId === null) return;
-    subagentRequests.set(threadId, { topLevelThreadId, requestId });
-    yield* enqueueTopLevelPublish(topLevelThreadId);
-  });
-
-  // The map can miss a child's update while publishing is off or the relay is
-  // unlinked, so each waiting child is re-read before its parent is published.
-  const currentSubagentRequestFor = Effect.fnUntraced(function* (topLevelThreadId: ThreadId) {
-    let pending: SubagentRequestAwareness | null = null;
-    for (const [childId, entry] of subagentRequests) {
-      if (entry.topLevelThreadId !== topLevelThreadId) continue;
-      const child = yield* readAwarenessThread(childId);
-      const requestId = waitingApprovalId(child);
-      if (child === null || requestId === undefined) {
-        subagentRequests.delete(childId);
-        continue;
-      }
-      if (requestId !== entry.requestId) subagentRequests.set(childId, { ...entry, requestId });
-      // The newest wait is the one to announce.
-      if (pending === null || DateTime.isGreaterThan(child.updatedAt, pending.updatedAt)) {
-        pending = {
-          requestId,
-          updatedAt: child.updatedAt,
-          waitsForInput: child.pendingRuntimeRequest?.kind === "user_input",
-        };
-      }
-    }
-    return pending;
-  });
+  const { track: trackSubagentRequest, current: currentSubagentRequestFor } =
+    makeSubagentRequestTracker(readAwarenessThread, (id) => enqueueTopLevelPublish(id));
 
   const processThreadPublish = Effect.fnUntraced(function* (threadId: ThreadId) {
     const retry = publishRetries.get(threadId);

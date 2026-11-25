@@ -27,6 +27,10 @@ execution model.
 A [peer link](../../apps/server/src/peer/PeerLinks.ts) lets one environment's agents work in another
 by signing in to the target's `/mcp` as an ordinary OAuth client (`t3code-peer-link`). The receiving
 side lists and revokes it in Sharing & access like any other session, and owns its expiry/renewal.
+Self-hosted relay peers share one HTTPS origin, so their validated environment path must remain part
+of link identity and OAuth issuer/resource URLs. Its public path gateway terminates TLS and is trusted
+with these credentials; the private app connection continues to use Noise. Registration-token
+membership provides discovery only, never an environment grant.
 
 - **Mode ceilings always narrow.** Forwarded calls carry the calling agent's modes in
   `T3-Mode-Limit`, which the receiving `/mcp` can only intersect downward with the link's approved

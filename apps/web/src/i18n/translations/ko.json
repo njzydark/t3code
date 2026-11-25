@@ -12987,5 +12987,18 @@
   "31426dda1da03064": "Relay connection actions",
   "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
   "6e9b12a55d970d4e": "Not configured",
-  "7a6edc5d78592a76": "The relay operation failed."
+  "7a6edc5d78592a76": "The relay operation failed.",
+  "b96de95f92a8eeeb": "MCP URL",
+  "fc4c1acbd708e980": "MCP 토큰을 만들 수 없습니다.",
+  "2bc30b6ab37805be": "토큰 만들기",
+  "a56e6900df35a4fb": "에이전트의 권한을 선택하세요. 토큰은 한 번만 표시됩니다.",
+  "007fd2aa13a38118": "MCP 토큰을 복사할 수 없습니다.",
+  "eb28894b5db17bb4": "MCP 토큰",
+  "93eca6c0c52fc6ea": "URL 및 토큰 복사",
+  "02b38ff73121821c": "만료: {date}",
+  "b3e6f662fc3e4f2d": "MCP 클라이언트",
+  "fce4ad679a63ecd9": "URL과 토큰으로 외부 에이전트를 연결합니다. 승인된 클라이언트에서 접근 권한을 취소하세요.",
+  "a793a7a0ac6f2476": "클라이언트 이름",
+  "d951fe94dcf0553f": "접근 권한",
+  "fc73ae0b15389efa": "페어링"
 }

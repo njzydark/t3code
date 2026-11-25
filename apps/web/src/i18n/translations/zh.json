@@ -13068,5 +13068,18 @@
   "31426dda1da03064": "Relay connection actions",
   "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
   "6e9b12a55d970d4e": "Not configured",
-  "7a6edc5d78592a76": "The relay operation failed."
+  "7a6edc5d78592a76": "The relay operation failed.",
+  "b96de95f92a8eeeb": "MCP 地址",
+  "fc4c1acbd708e980": "无法创建 MCP 令牌。",
+  "2bc30b6ab37805be": "创建令牌",
+  "a56e6900df35a4fb": "选择智能体的权限。令牌仅显示一次。",
+  "007fd2aa13a38118": "无法复制 MCP 令牌。",
+  "eb28894b5db17bb4": "MCP 令牌",
+  "93eca6c0c52fc6ea": "复制地址和令牌",
+  "02b38ff73121821c": "到期时间：{date}",
+  "b3e6f662fc3e4f2d": "MCP 客户端",
+  "fce4ad679a63ecd9": "使用地址和令牌连接外部智能体。在“已授权客户端”中撤销访问权限。",
+  "a793a7a0ac6f2476": "客户端名称",
+  "d951fe94dcf0553f": "访问权限",
+  "fc73ae0b15389efa": "配对"
 }

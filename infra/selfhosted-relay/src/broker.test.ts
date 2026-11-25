@@ -5,6 +5,7 @@ import type * as NodeNet from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import { describe, expect, it } from "vite-plus/test";
 import { EncryptedRelayClient } from "@t3tools/relay-transport";
+import { serveLocalRelayRequest } from "@t3tools/relay-transport/local-bridge";
 import { connectHost } from "@t3tools/relay-transport/node";
 import { generateIdentity } from "@t3tools/relay-transport/secure";
 import { createRelayBroker } from "../test/broker.ts";
@@ -276,6 +277,40 @@ describe("self-hosted encrypted relay", () => {
         headers: expect.arrayContaining([["x-t3-tunnel-port-refused", "1"]]),
       },
     ]);
+    const responses: Array<{ status: number; headers: string[][] }> = [];
+    let finished = false;
+    await serveLocalRelayRequest(
+      test.client,
+      {
+        start: async () => 0,
+        stop: async () => {},
+        read: async () => null,
+        respond: async (_id, status, headers) => {
+          responses.push({ status, headers });
+        },
+        write: async () => {},
+        finish: async () => {
+          finished = true;
+        },
+        close: () => {},
+        upgrade: async () => {},
+        readSocket: async () => null,
+        writeSocket: async () => {},
+      },
+      {
+        id: "native-refused",
+        route: test.address.route,
+        method: "GET",
+        path: "/refused",
+        headers: [],
+        websocket: true,
+      },
+      new AbortController().signal,
+    );
+    expect(responses).toMatchObject([
+      { status: 502, headers: expect.arrayContaining([["x-t3-tunnel-port-refused", "1"]]) },
+    ]);
+    expect(finished).toBe(true);
   });
 
   it("rejects a relay that routes to a different host identity", async () => {

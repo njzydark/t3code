@@ -113,10 +113,14 @@ import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolki
 import { MCP_HTTP_PATH } from "../httpCors.ts";
 import { requestUrl } from "../requestUrl.ts";
 import { routineSpan } from "@t3tools/shared/observability";
+import { relayPublicPrefix } from "@t3tools/relay-transport/protocol";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   requestUrl(request).pipe(
-    Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
+    Option.map(
+      (url) =>
+        `${url.origin}${relayPublicPrefix(request.headers["x-forwarded-prefix"] ?? "") ?? ""}/.well-known/oauth-protected-resource/mcp`,
+    ),
   );
 
 /** Launched agents cannot open OAuth browsers; OAuth would mint credentials outliving their session. */

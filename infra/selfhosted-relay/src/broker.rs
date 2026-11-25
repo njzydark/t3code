@@ -12,7 +12,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::{
@@ -31,7 +31,7 @@ const MAX_CLIENTS: usize = 32;
 #[derive(Clone)]
 pub struct Broker {
     registry: Arc<Mutex<Registry>>,
-    token_digest: [u8; 32],
+    token_digests: Arc<Vec<[u8; 32]>>,
     sockets: Arc<Semaphore>,
     shutdown: CancellationToken,
     pub tasks: TaskTracker,
@@ -44,6 +44,8 @@ struct Registry {
 }
 
 struct Host {
+    group: usize,
+    environment: Option<Environment>,
     control: mpsc::Sender<Message>,
     clients: Arc<Semaphore>,
     cancelled: CancellationToken,
@@ -59,25 +61,186 @@ struct LeasedSocket {
     _permit: OwnedSemaphorePermit,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Environment {
+    pub environment_id: String,
+    pub label: String,
+    pub peer_id: String,
+}
+
+impl Environment {
+    fn valid(&self) -> bool {
+        !self.environment_id.is_empty()
+            && self.environment_id.len() <= 128
+            && self
+                .environment_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_:".contains(&b))
+            && !self.label.is_empty()
+            && self.label.len() <= 256
+            && !self.label.chars().any(char::is_control)
+            && (20..=128).contains(&self.peer_id.len())
+            && self.peer_id.bytes().all(|b| b.is_ascii_alphanumeric())
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredEnvironment {
+    #[serde(flatten)]
+    pub environment: Environment,
+    pub route: String,
+}
+
+pub struct GatewayLease {
+    pub socket: WebSocket,
+    pub cancelled: CancellationToken,
+    _socket_permit: OwnedSemaphorePermit,
+    _client_permit: OwnedSemaphorePermit,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Registration {
-    Host { route: String, token: String },
-    Client { route: String },
-    Session { id: String, ticket: String },
+    Host {
+        route: String,
+        token: String,
+        #[serde(default)]
+        environment: Option<Environment>,
+    },
+    Client {
+        route: String,
+    },
+    Session {
+        id: String,
+        ticket: String,
+    },
 }
 
 impl Broker {
-    pub fn new(token: &str, shutdown: CancellationToken) -> Result<Self, &'static str> {
-        if !(32..=1024).contains(&token.len()) {
+    pub fn with_tokens(
+        tokens: &[String],
+        shutdown: CancellationToken,
+    ) -> Result<Self, &'static str> {
+        if tokens.is_empty()
+            || tokens.len() > 128
+            || tokens
+                .iter()
+                .any(|token| !(32..=1024).contains(&token.len()))
+        {
             return Err("Use a relay registration token of 32 to 1024 bytes.");
         }
         Ok(Self {
             registry: Arc::default(),
-            token_digest: digest(token),
+            token_digests: Arc::new(tokens.iter().map(|token| digest(token)).collect()),
             sockets: Arc::new(Semaphore::new(4096)),
             shutdown,
             tasks: TaskTracker::new(),
+        })
+    }
+
+    pub fn group(&self, token: &str) -> Option<usize> {
+        if token.len() > 1024 {
+            return None;
+        }
+        let hash = digest(token);
+        self.token_digests
+            .iter()
+            .position(|known| bool::from(known.ct_eq(&hash)))
+    }
+
+    pub fn owns_environment(&self, token: &str, environment_id: &str) -> bool {
+        let Some(group) = self.group(token) else {
+            return false;
+        };
+        self.registry.lock().unwrap().hosts.values().any(|host| {
+            host.group == group
+                && host
+                    .environment
+                    .as_ref()
+                    .is_some_and(|env| env.environment_id == environment_id)
+        })
+    }
+
+    pub fn discover(&self, token: &str) -> Option<Vec<DiscoveredEnvironment>> {
+        let group = self.group(token)?;
+        let mut result: Vec<_> = self
+            .registry
+            .lock()
+            .unwrap()
+            .hosts
+            .iter()
+            .filter(|(_, host)| host.group == group)
+            .filter_map(|(route, host)| {
+                host.environment
+                    .clone()
+                    .map(|environment| DiscoveredEnvironment {
+                        environment,
+                        route: route.clone(),
+                    })
+            })
+            .collect();
+        result.sort_by(|a, b| {
+            a.environment
+                .environment_id
+                .cmp(&b.environment.environment_id)
+        });
+        Some(result)
+    }
+
+    pub async fn open_gateway(&self, environment_id: &str) -> Result<GatewayLease, StatusCode> {
+        let host = self
+            .registry
+            .lock()
+            .unwrap()
+            .hosts
+            .values()
+            .find(|host| {
+                host.environment
+                    .as_ref()
+                    .is_some_and(|env| env.environment_id == environment_id)
+            })
+            .cloned()
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let permit = host
+            .clients
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let id = random_id();
+        let ticket = random_id();
+        let (session, receiver) = oneshot::channel();
+        self.registry.lock().unwrap().pending.insert(
+            id.clone(),
+            Pending {
+                ticket_digest: digest(&ticket),
+                session,
+            },
+        );
+        let _guard = PendingGuard {
+            broker: self.clone(),
+            id: id.clone(),
+        };
+        host.control
+            .try_send(Message::Text(
+                serde_json::json!({"type":"gateway","id":id,"ticket":ticket})
+                    .to_string()
+                    .into(),
+            ))
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let mut connected = tokio::select! {
+            _ = host.cancelled.cancelled() => return Err(StatusCode::BAD_GATEWAY),
+            result = timeout(REGISTRATION_TIMEOUT, receiver) => result.map_err(|_| StatusCode::GATEWAY_TIMEOUT)?.map_err(|_| StatusCode::BAD_GATEWAY)?,
+        };
+        send(&mut connected.socket, ready())
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?;
+        Ok(GatewayLease {
+            socket: connected.socket,
+            cancelled: host.cancelled.clone(),
+            _socket_permit: connected._permit,
+            _client_permit: permit,
         })
     }
 
@@ -98,7 +261,11 @@ impl Broker {
             }) => result.ok().flatten(),
         };
         match registration {
-            Some(Registration::Host { route, token }) => self.host(socket, route, token).await,
+            Some(Registration::Host {
+                route,
+                token,
+                environment,
+            }) => self.host(socket, route, token, environment).await,
             Some(Registration::Client { route }) => self.client(socket, route).await,
             Some(Registration::Session { id, ticket }) => {
                 let pending = {
@@ -122,9 +289,16 @@ impl Broker {
         }
     }
 
-    async fn host(&self, mut socket: LeasedSocket, route: String, token: String) {
-        if token.len() > 1024
-            || !bool::from(self.token_digest.ct_eq(&digest(&token)))
+    async fn host(
+        &self,
+        mut socket: LeasedSocket,
+        route: String,
+        token: String,
+        environment: Option<Environment>,
+    ) {
+        let group = self.group(&token);
+        if group.is_none()
+            || environment.as_ref().is_some_and(|env| !env.valid())
             || route.len() != 32
             || !route
                 .bytes()
@@ -135,13 +309,24 @@ impl Broker {
         }
         let (control, mut commands) = mpsc::channel(MAX_CLIENTS);
         let host = Arc::new(Host {
+            group: group.expect("authenticated group"),
+            environment,
             control,
             clients: Arc::new(Semaphore::new(MAX_CLIENTS)),
             cancelled: self.shutdown.child_token(),
         });
         let accepted = {
             let mut registry = self.registry.lock().unwrap();
-            if registry.hosts.len() >= MAX_HOSTS || registry.hosts.contains_key(&route) {
+            if registry.hosts.len() >= MAX_HOSTS
+                || registry.hosts.contains_key(&route)
+                || registry.hosts.values().any(|other| {
+                    other
+                        .environment
+                        .as_ref()
+                        .zip(host.environment.as_ref())
+                        .is_some_and(|(a, b)| a.environment_id == b.environment_id)
+                })
+            {
                 false
             } else {
                 registry.hosts.insert(route.clone(), host.clone());

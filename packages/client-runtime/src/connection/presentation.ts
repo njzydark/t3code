@@ -7,6 +7,7 @@ import { type MarkedText, resolveMarkedText } from "../errors/translatable.ts";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
 import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
+import { relayPublicBaseUrl, relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
 
 export type EnvironmentConnectionPhase =
   | "available"
@@ -161,6 +162,11 @@ export function environmentMcpUrl(input: {
   if (relayMcpUrl !== null) return relayMcpUrl;
   const connectedRouteId = input.connectedTarget ? connectionRouteId(input.connectedTarget) : null;
   const routes = connectionRoutes(input.entry);
+  for (const route of routes) {
+    const profile = Option.getOrNull(route.profile);
+    if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay)
+      return `${relayPublicBaseUrl(profile.selfHostedRelay.relayUrl, input.entry.target.environmentId)}/mcp`;
+  }
   const connectedRoute = routes.find(
     (route) => connectionRouteId(route.target) === connectedRouteId,
   );
@@ -173,6 +179,7 @@ export function environmentMcpUrl(input: {
 }
 
 function mcpUrlFromBase(httpBaseUrl: string): string | null {
+  if (relayRouteFromUrl(httpBaseUrl) !== null) return null;
   let url: URL;
   try {
     url = new URL(httpBaseUrl);

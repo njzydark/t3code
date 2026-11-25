@@ -13049,5 +13049,18 @@
   "31426dda1da03064": "Relay connection actions",
   "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
   "6e9b12a55d970d4e": "Not configured",
-  "7a6edc5d78592a76": "The relay operation failed."
+  "7a6edc5d78592a76": "The relay operation failed.",
+  "b96de95f92a8eeeb": "URL de MCP",
+  "fc4c1acbd708e980": "No se pudo crear el token MCP.",
+  "2bc30b6ab37805be": "Crear token",
+  "a56e6900df35a4fb": "Elige los permisos del agente. El token se muestra una sola vez.",
+  "007fd2aa13a38118": "No se pudo copiar el token MCP.",
+  "eb28894b5db17bb4": "Token MCP",
+  "93eca6c0c52fc6ea": "Copiar URL y token",
+  "02b38ff73121821c": "Caduca: {date}",
+  "b3e6f662fc3e4f2d": "Cliente MCP",
+  "fce4ad679a63ecd9": "Conecta un agente externo mediante una URL y un token. Revoca el acceso en Clientes autorizados.",
+  "a793a7a0ac6f2476": "Nombre del cliente",
+  "d951fe94dcf0553f": "Acceso",
+  "fc73ae0b15389efa": "Vincular"
 }

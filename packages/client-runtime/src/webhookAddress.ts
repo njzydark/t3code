@@ -1,5 +1,6 @@
 import type { ScheduledTaskWebhookEndpoint } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
+import { relayRouteFromUrl } from "@t3tools/relay-transport/protocol";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
@@ -17,7 +18,7 @@ export function webhookAddress(
   if (endpoint.url !== null) {
     return { address: endpoint.url, copyable: true, note: null };
   }
-  if (httpBaseUrl === null) {
+  if (httpBaseUrl === null || relayRouteFromUrl(httpBaseUrl) !== null) {
     return {
       address: endpoint.path,
       copyable: false,

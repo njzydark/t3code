@@ -13,7 +13,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
-import { HttpServer } from "effect/http";
+import { HttpServer, FetchHttpClient } from "effect/http";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { EnvironmentId } from "@t3tools/contracts";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -37,6 +39,10 @@ const fixture = (policy?: ManagedPolicyDocument) =>
     let failStorage = false;
     const dependencies = Layer.mergeAll(
       NodeServices.layer,
+      FetchHttpClient.layer,
+      Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getEnvironmentId: Effect.succeed(EnvironmentId.make("fixture")),
+      }),
       ManagedPolicy.layerTest(policy),
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-relay-settings-" }).pipe(
         Layer.provide(NodeServices.layer),
@@ -78,6 +84,12 @@ const fixture = (policy?: ManagedPolicyDocument) =>
             }),
           ),
         revokePairingLink: () => Effect.succeed(true),
+        issueMcpClientSession: () =>
+          Effect.succeed({
+            sessionId: "mcp-session" as import("@t3tools/contracts").AuthSessionId,
+            token: "fixture-mcp-token",
+            expiresAt: DateTime.makeUnsafe(30 * 86400_000),
+          }),
       }),
       Layer.succeed(SelfHostedRelay.SelfHostedRelay, {
         run: (input) =>
@@ -107,6 +119,27 @@ const fixture = (policy?: ManagedPolicyDocument) =>
   });
 
 describe("self-hosted relay host settings", () => {
+  it.effect("issues revocable MCP credentials only within the caller's grants", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      yield* Effect.gen(function* () {
+        const host = yield* SelfHostedRelayHost.SelfHostedRelayHost;
+        yield* host.update({ relayUrl: url, registrationToken: token, enabled: true });
+        const denied = yield* host
+          .mcpToken([AuthAccessWriteScope], { label: "Outside agent", access: "read-only" })
+          .pipe(Effect.flip);
+        expect(denied.operation).toBe("permissions");
+        const issued = yield* host.mcpToken(AuthStandardClientScopes, {
+          label: "Outside agent",
+          access: "read-only",
+        });
+        expect(issued.url).toBe("https://relay.example.com/v1/environments/fixture/mcp");
+        expect(issued.token).toBe("fixture-mcp-token");
+        expect(JSON.stringify(yield* f.read(host))).not.toContain(issued.token);
+      }).pipe(Effect.provide(f.layer), Effect.scoped);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "saves credentials privately, reconnects after restart, and supports disable and clear",
     () =>
