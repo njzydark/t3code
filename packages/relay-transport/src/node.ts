@@ -11,6 +11,7 @@ import {
   MAX_SOCKET_MESSAGE,
   relaySocketUrl,
   validateRelayAddress,
+  virtualRelayOrigin,
   type RelayAddress,
 } from "./protocol.ts";
 import { openSocket, secureSocket, type RelaySocketFactory } from "./secure.ts";
@@ -103,6 +104,7 @@ async function proxyHttp(
   metadata: Record<string, unknown>,
   origin: URL,
   agent: NodeHttp.Agent,
+  relayOrigin: URL,
 ) {
   const target = requestTarget(origin, metadata.path);
   if (
@@ -113,7 +115,13 @@ async function proxyHttp(
   }
   const request = NodeHttp.request(target, {
     method: metadata.method,
-    headers: filteredHeaders(metadata.headers),
+    // All client aliases sign the same virtual origin. Never take proxy identity
+    // headers from the caller; only the connector's configured route owns it.
+    headers: {
+      ...filteredHeaders(metadata.headers),
+      host: relayOrigin.host,
+      "x-forwarded-proto": "https",
+    },
     agent,
   });
   const abort = () => request.destroy(new Error("Relay request cancelled."));
@@ -170,7 +178,12 @@ async function proxyHttp(
   }
 }
 
-async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unknown>, origin: URL) {
+async function proxyWebSocket(
+  stream: RelayStream,
+  metadata: Record<string, unknown>,
+  origin: URL,
+  relayOrigin: URL,
+) {
   const target = requestTarget(origin, metadata.path);
   target.protocol = "ws:";
   if (
@@ -181,6 +194,7 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
     throw new Error("Invalid relay WebSocket protocols.");
   }
   const socket = new WebSocket(target, metadata.protocols, {
+    headers: { host: relayOrigin.host, "x-forwarded-proto": "https" },
     maxPayload: MAX_SOCKET_MESSAGE,
     perMessageDeflate: false,
   });
@@ -313,6 +327,7 @@ export async function connectHost(input: {
 }) {
   const address = validateRelayAddress(input.address);
   const origin = validateLocalTarget(input.target);
+  const relayOrigin = new URL(virtualRelayOrigin(address.route));
   const channels = new Set<RelayChannel>();
   const sessions = new Set<AbortController>();
   const socket = await openSocket(
@@ -359,8 +374,10 @@ export async function connectHost(input: {
       });
       const channel = new RelayChannel(wire, (stream, metadata) => {
         if (!isRecord(metadata)) return Promise.reject(new Error("Invalid relay stream."));
-        if (metadata.type === "http") return proxyHttp(stream, metadata, origin, agent);
-        if (metadata.type === "websocket") return proxyWebSocket(stream, metadata, origin);
+        if (metadata.type === "http")
+          return proxyHttp(stream, metadata, origin, agent, relayOrigin);
+        if (metadata.type === "websocket")
+          return proxyWebSocket(stream, metadata, origin, relayOrigin);
         return Promise.reject(new Error("Unknown relay stream type."));
       });
       sessions.delete(controller);

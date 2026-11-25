@@ -28,6 +28,7 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
+  DpopConnectionCredential,
   type ConnectionCatalogEntry,
   type ConnectionRegistration,
   type ConnectionRoute,
@@ -2277,6 +2278,87 @@ describe("EnvironmentRegistry routes", () => {
         expect(entries.get(LAN_TARGET.environmentId)?.alternateRoutes?.[0]?.target).toEqual(
           RELAY_TARGET,
         );
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("learns LAN routes over a paired self-hosted relay and selects the direct route", () =>
+    Effect.gen(function* () {
+      const target = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: "self-relay" });
+      const profile = new BearerConnectionProfile({
+        connectionId: target.connectionId,
+        environmentId: target.environmentId,
+        label: target.label,
+        httpBaseUrl: "https://1234567890abcdef1234567890abcdef.t3-relay.invalid/",
+        wsBaseUrl: "wss://1234567890abcdef1234567890abcdef.t3-relay.invalid/",
+        selfHostedRelay: {
+          relayUrl: "https://relay.example.com",
+          route: "1234567890abcdef1234567890abcdef",
+          peerId: "pinned-host",
+        },
+      });
+      const learnedId = `learned:${target.environmentId}:${LAN_PROFILE.httpBaseUrl.replace(/\/$/, "")}@${target.connectionId}`;
+      let lanReachable = true;
+      const harness = yield* makeHarness(
+        [target],
+        [profile],
+        [
+          [
+            target.connectionId,
+            new DpopConnectionCredential({
+              accessToken: "bound-token",
+              expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+            }),
+          ],
+        ],
+        {
+          checkRoute: (route) =>
+            connectionRouteId(route.target) === target.connectionId
+              ? "unchecked"
+              : lanReachable
+                ? "answered"
+                : "silent",
+          directEndpoints: [{ kind: "lan", httpBaseUrl: LAN_PROFILE.httpBaseUrl }],
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* registry.stateChanges(target.environmentId).pipe(
+          Stream.filter((state) => state.phase === "connected" && state.generation === 2),
+          Stream.runHead,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(learnedId)).toMatchObject({
+          learned: true,
+          authorization: "self-hosted-relay",
+          httpBaseUrl: LAN_PROFILE.httpBaseUrl,
+        });
+        expect(yield* Ref.get(harness.connectedRoutes)).toEqual([target.connectionId, learnedId]);
+        lanReachable = false;
+        const latest = (yield* Ref.get(harness.sessions)).at(-1)!;
+        yield* Deferred.fail(
+          latest.closed,
+          new ConnectionTransientError({
+            reason: "transport",
+            detail: "LAN is no longer reachable.",
+          }),
+        );
+        yield* awaitConnectionState(
+          registry,
+          target.environmentId,
+          (state) => state.phase === "backoff",
+        );
+        yield* registry.retryNow(target.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          target.environmentId,
+          (state) => state.phase === "connected" && state.generation === 3,
+        );
+        expect(yield* Ref.get(harness.connectedRoutes)).toEqual([
+          target.connectionId,
+          learnedId,
+          target.connectionId,
+        ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

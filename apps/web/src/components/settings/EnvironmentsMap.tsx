@@ -316,8 +316,9 @@ function useFleetGraph() {
       routes: connectionRoutes(environment.entry).map((route) => ({
         id: connectionRouteId(route.target),
         kind: connectionRouteKind(route),
-        ...(connectionRouteKind(route) === "tailnet" &&
-        routeHttpBaseUrl(route)?.startsWith("https:") === true
+        ...((connectionRouteKind(route) === "tailnet" &&
+          routeHttpBaseUrl(route)?.startsWith("https:") === true) ||
+        (connectionRouteKind(route) === "relay" && route.target._tag === "BearerConnectionTarget")
           ? { label: connectionRouteLabelText(route, m) }
           : {}),
       })),

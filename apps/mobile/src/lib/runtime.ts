@@ -32,7 +32,9 @@ type RuntimeLayerSource =
   | typeof SelfHostedRelay.layer;
 
 const layerRuntime = Layer.merge(
-  ManagedRelayLayer.layer(configuredRelayUrl()),
+  ManagedRelayLayer.layer(configuredRelayUrl(), (url) =>
+    SelfHostedRelay.relayNetwork.transport.proofUrl(url),
+  ),
   NativeWebSocket.layer,
 ).pipe(
   Layer.provideMerge(Dpop.layer),
