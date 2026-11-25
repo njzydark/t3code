@@ -5,8 +5,10 @@ import {
   FRAME_BYTES,
   FrameDecoder,
   FrameKind,
+  isRecord,
   jsonBytes,
   MAX_STREAMS,
+  MAX_STREAM_WINDOW,
   readJson,
   STREAM_WINDOW,
 } from "./protocol.ts";
@@ -70,10 +72,28 @@ function consumesCredit(kind: FrameKind) {
   );
 }
 
+function peerWindow(metadata: unknown) {
+  if (!isRecord(metadata) || metadata.receiveWindow === undefined) return STREAM_WINDOW;
+  const window = metadata.receiveWindow;
+  if (
+    typeof window !== "number" ||
+    !Number.isInteger(window) ||
+    window < STREAM_WINDOW ||
+    window > MAX_STREAM_WINDOW
+  )
+    throw new Error("Invalid relay receive window.");
+  return window;
+}
+
+function advertiseWindow(metadata: unknown) {
+  return isRecord(metadata) ? { ...metadata, receiveWindow: MAX_STREAM_WINDOW } : metadata;
+}
+
 export class RelayStream {
   private readonly incoming = new AsyncQueue<StreamFrame>();
-  private credit = STREAM_WINDOW;
-  private receivedCredit = STREAM_WINDOW;
+  private credit: number;
+  private sendWindow: number;
+  private receivedCredit = MAX_STREAM_WINDOW;
   private creditWaiter: { resolve: () => void; reject: (error: Error) => void } | undefined;
   private localEnded = false;
   private remoteEnded = false;
@@ -83,16 +103,18 @@ export class RelayStream {
   private readonly channel: RelayChannel;
   readonly signal = this.abortController.signal;
 
-  constructor(id: number, channel: RelayChannel) {
+  constructor(id: number, channel: RelayChannel, sendWindow = STREAM_WINDOW) {
     this.id = id;
     this.channel = channel;
+    this.credit = sendWindow;
+    this.sendWindow = sendWindow;
   }
 
   receive(kind: FrameKind, payload: Uint8Array) {
     if (kind === FrameKind.Credit) {
       if (payload.length !== 4) throw new Error("Invalid relay credit.");
       const count = new DataView(payload.buffer, payload.byteOffset, 4).getUint32(0);
-      if (count === 0 || this.credit + count > STREAM_WINDOW)
+      if (count === 0 || this.credit + count > this.sendWindow)
         throw new Error("Invalid relay credit.");
       this.credit += count;
       this.creditWaiter?.resolve();
@@ -111,6 +133,16 @@ export class RelayStream {
       this.incoming.end();
       this.release();
       return;
+    }
+    if (kind === FrameKind.Head) {
+      // Only advertised capacity raises the legacy window, so old peers keep their original limit.
+      const window = peerWindow(readJson(payload));
+      if (window > this.sendWindow) {
+        this.credit += window - this.sendWindow;
+        this.sendWindow = window;
+        this.creditWaiter?.resolve();
+        this.creditWaiter = undefined;
+      }
     }
     if (consumesCredit(kind)) {
       this.receivedCredit -= payload.length + 9;
@@ -162,7 +194,7 @@ export class RelayStream {
   }
 
   async head(value: unknown) {
-    await this.send(FrameKind.Head, jsonBytes(value));
+    await this.send(FrameKind.Head, jsonBytes(advertiseWindow(value)));
   }
 
   async end() {
@@ -226,7 +258,7 @@ export class RelayChannel {
     const stream = new RelayStream(this.nextId++, this);
     this.streams.set(stream.id, stream);
     try {
-      await this.send(FrameKind.Open, stream.id, jsonBytes(metadata));
+      await this.send(FrameKind.Open, stream.id, jsonBytes(advertiseWindow(metadata)));
       return stream;
     } catch (error) {
       stream.cancel();
@@ -267,9 +299,10 @@ export class RelayChannel {
               throw new Error("Invalid relay stream open.");
             }
             lastOpenedId = id;
-            const stream = new RelayStream(id, this);
+            const metadata = readJson(payload);
+            const stream = new RelayStream(id, this, peerWindow(metadata));
             this.streams.set(id, stream);
-            void this.onOpen(stream, readJson(payload)).catch(() => stream.cancel());
+            void this.onOpen(stream, metadata).catch(() => stream.cancel());
           } else {
             const stream = this.streams.get(id);
             if (stream) stream.receive(kind, payload);
