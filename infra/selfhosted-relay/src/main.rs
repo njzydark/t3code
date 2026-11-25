@@ -1,4 +1,5 @@
 mod broker;
+mod gateway;
 mod push;
 mod web;
 
@@ -10,7 +11,10 @@ use std::{
     time::Duration,
 };
 
-use axum::{Router, middleware, routing::get};
+use axum::{
+    Router, middleware,
+    routing::{any, get},
+};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
@@ -58,10 +62,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let token = env::var("T3_RELAY_REGISTRATION_TOKEN")?;
+    let mut tokens: Vec<String> = match env::var("T3_RELAY_TOKENS") {
+        Ok(value) if !value.trim().is_empty() => {
+            let groups: std::collections::BTreeMap<String, String> = serde_json::from_str(&value)?;
+            groups.into_values().collect()
+        }
+        _ => Vec::new(),
+    };
+    if let Ok(token) = env::var("T3_RELAY_REGISTRATION_TOKEN") {
+        if !token.trim().is_empty() && !tokens.contains(&token) {
+            tokens.push(token);
+        }
+    }
+    if tokens.is_empty() {
+        return Err("Set T3_RELAY_REGISTRATION_TOKEN or T3_RELAY_TOKENS".into());
+    }
+    let token = &tokens[0];
     let shutdown = CancellationToken::new();
-    let state = broker::Broker::new(&token, shutdown.clone())?;
-    let push = push::Push::from_env(&token)?;
+    let state = broker::Broker::with_tokens(&tokens, shutdown.clone())?;
+    let push = push::Push::from_env(token)?.map(|push| push.with_broker(state.clone()));
     let web_root = match env::var_os("T3_RELAY_WEB_ROOT") {
         Some(path) => Some(tokio::fs::canonicalize(PathBuf::from(path)).await?),
         None => None,
@@ -72,6 +91,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
         )
         .route("/v1/socket", get(broker::upgrade))
+        .route("/v1/environments", get(gateway::directory))
+        .route(
+            "/v1/environments/{environment_id}/{*path}",
+            any(gateway::gateway),
+        )
         .fallback(web::serve)
         .layer(axum::Extension(web_root))
         .layer(middleware::from_fn(web::security_headers))

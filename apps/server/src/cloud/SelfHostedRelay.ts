@@ -161,6 +161,7 @@ const make = Effect.gen(function* () {
           target: input.target,
           privateKey: host.privateKey,
           registrationToken: input.registrationToken,
+          publishEnvironment: true,
           signal,
           onConnected: () => {
             Queue.offerUnsafe(states, "connected");

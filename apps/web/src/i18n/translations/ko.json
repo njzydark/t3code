@@ -12953,5 +12953,18 @@
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
-  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted"
+  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
+  "fc73ae0b15389efa": "페어링",
+  "b3e6f662fc3e4f2d": "MCP 클라이언트",
+  "fc4c1acbd708e980": "MCP 토큰을 만들 수 없습니다.",
+  "a56e6900df35a4fb": "에이전트의 권한을 선택하세요. 토큰은 한 번만 표시됩니다.",
+  "02b38ff73121821c": "만료: {date}",
+  "b96de95f92a8eeeb": "MCP URL",
+  "eb28894b5db17bb4": "MCP 토큰",
+  "007fd2aa13a38118": "MCP 토큰을 복사할 수 없습니다.",
+  "93eca6c0c52fc6ea": "URL 및 토큰 복사",
+  "a793a7a0ac6f2476": "클라이언트 이름",
+  "d951fe94dcf0553f": "접근 권한",
+  "2bc30b6ab37805be": "토큰 만들기",
+  "fce4ad679a63ecd9": "URL과 토큰으로 외부 에이전트를 연결합니다. 승인된 클라이언트에서 접근 권한을 취소하세요."
 }

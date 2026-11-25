@@ -1,3 +1,4 @@
+import { SelfHostedRelayDirectory } from "../connection/SelfHostedRelayDirectory";
 import { useGT } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useNavigation } from "@react-navigation/native";
@@ -154,6 +155,7 @@ export function SettingsEnvironmentsRouteScreen() {
               }
             : {})}
         />
+        <SelfHostedRelayDirectory />
         <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>

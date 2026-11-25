@@ -463,6 +463,30 @@ describe("linkRequestTarget", () => {
     });
   });
 
+  it("distinguishes environments sharing one public relay domain", () => {
+    const first = { ...box, urls: ["https://relay.example/v1/environments/first"] };
+    const second = {
+      ...box,
+      environmentId: EnvironmentId.make("second"),
+      urls: ["https://relay.example/v1/environments/second"],
+    };
+    expect(
+      linkRequestTarget(
+        { url: "https://relay.example/v1/environments/first/mcp" },
+        [first, second],
+        null,
+      ),
+    ).toMatchObject({ kind: "machine", environmentId: first.environmentId });
+    expect(
+      linkRequestTarget(
+        { url: "https://relay.example/v1/environments/unknown/mcp" },
+        [first, second],
+        null,
+      ),
+    ).toEqual({ kind: "address" });
+    expect(linkRequestTargetName({ url: first.urls[0] })).toBe(first.urls[0]);
+  });
+
   it("links the machine the agent named or the user picked, at the addresses this app has", () => {
     expect(linkRequestTarget({ environmentId: box.environmentId }, [box], null)).toMatchObject({
       kind: "machine",

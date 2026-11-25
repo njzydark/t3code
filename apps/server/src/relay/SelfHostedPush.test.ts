@@ -6,6 +6,7 @@ import {
   type Project,
   ProjectId,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -75,6 +76,7 @@ const fixture = (
           hasActionableProposedPlan: false,
         }
       : null;
+    const children = new Map<ThreadId, AgentAwarenessThread>();
     const requests: Array<{
       url: string;
       authorization: string | undefined;
@@ -140,8 +142,25 @@ const fixture = (
           }),
           Layer.mock(ThreadManagement.ThreadManagementService)({
             streamDomainEvents: Stream.never,
-            getAgentAwarenessSnapshot: () =>
-              Effect.succeed({ snapshotSequence: 0, threads: thread ? [thread] : [] }),
+            listActiveShellIndex: () =>
+              Effect.succeed(
+                [...children.values()].map((child) => ({
+                  ...child,
+                  settledAt: null,
+                  pinnedAt: null,
+                  pinOrderKey: null,
+                  snoozedUntil: null,
+                  mayBeLive: true,
+                  hasRemoteTasks: false,
+                })),
+              ),
+            getAgentAwarenessSnapshot: (id) =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                threads: [...(thread ? [thread] : []), ...children.values()].filter((value) =>
+                  id === undefined ? value.id === thread?.id : value.id === id,
+                ),
+              }),
           }),
           Layer.mock(ProjectService.ProjectService)({
             getById: () => Effect.succeedSome(project),
@@ -196,6 +215,29 @@ const fixture = (
       updateThread: (patch: Partial<AgentAwarenessThread>) => {
         if (thread) thread = { ...thread, ...patch };
       },
+      setChild: (pending: boolean) => {
+        if (!thread) throw new Error("Parent missing");
+        const id = ThreadId.make("child");
+        children.set(id, {
+          ...thread,
+          id,
+          lineage: {
+            rootThreadId: thread.id,
+            parentThreadId: thread.id,
+            relationshipToParent: "subagent",
+          },
+          activityRunStatus: "running",
+          creationSource: "mcp",
+          pendingRuntimeRequest: pending
+            ? {
+                id: RuntimeRequestId.make("child-approval"),
+                kind: "command",
+                createdAt: DateTime.makeUnsafe(2000),
+              }
+            : null,
+          updatedAt: DateTime.makeUnsafe(2000),
+        });
+      },
       enableConnect: () => {
         officialConnect = true;
       },
@@ -203,6 +245,45 @@ const fixture = (
   });
 
 describe("optional self-hosted push adapter", () => {
+  it.effect("publishes child approval on its parent and clears the resolved wait", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture(true, true, false, true);
+      f.setChild(true);
+      yield* Effect.gen(function* () {
+        const push = yield* SelfHostedPush.SelfHostedPush;
+        const registration = {
+          operation: "register" as const,
+          registration: {
+            deviceId: "device",
+            label: "Device",
+            platform: "ios" as const,
+            iosMajorVersion: 18,
+            preferences: {
+              notificationsEnabled: true,
+              liveActivitiesEnabled: true,
+              notifyOnApproval: true,
+              notifyOnInput: true,
+              notifyOnCompletion: true,
+              notifyOnFailure: true,
+            },
+          },
+        };
+        yield* push.request(sessionId, registration);
+        const published = () =>
+          f.requests.filter((r) => r.payload.operation === "publish" && r.payload.state !== null);
+        expect(
+          published().some(
+            (r) => (r.payload.state as Record<string, unknown>).attentionId === "child-approval",
+          ),
+        ).toBe(true);
+        expect(published().every((r) => r.payload.threadId === "thread")).toBe(true);
+        f.setChild(false);
+        yield* push.request(sessionId, registration);
+        expect(published().at(-1)?.payload.state).toMatchObject({ phase: "running" });
+        expect(published().at(-1)?.payload.state).not.toHaveProperty("attentionId");
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
   it.effect("delivers a held completion before the settled thread's tombstone", () =>
     Effect.gen(function* () {
       const f = yield* fixture(true, true, false, true);

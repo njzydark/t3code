@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import * as Option from "effect/Option";
+import { BearerConnectionTarget } from "@t3tools/client-runtime/connection";
 import { EnvironmentId } from "@t3tools/contracts";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { installSelfHostedPush, refreshSelfHostedPush, unregisterSelfHostedPush } from "./runtime";
 import * as Notifications from "expo-notifications";
 
 const state = vi.hoisted(() => ({
-  entries: new Map<string, { enabled: boolean; profile: unknown }>(),
+  entries: new Map<
+    string,
+    {
+      enabled: boolean;
+      profile: unknown;
+      target: BearerConnectionTarget;
+      alternateRoutes?: Array<{ target: BearerConnectionTarget; profile: unknown }>;
+    }
+  >(),
   configs: new Map<string, unknown>(),
   enabled: true,
   requests: [] as Array<{ environmentId: string; input: Record<string, unknown> }>,
@@ -85,6 +94,7 @@ function setup(selfHosted: boolean, enabled = true) {
   const id = EnvironmentId.make("environment");
   state.entries.set(id, {
     enabled: true,
+    target: new BearerConnectionTarget({ environmentId: id, connectionId: "relay", label: "Host" }),
     profile: Option.some({
       _tag: "BearerConnectionProfile",
       ...(selfHosted ? { selfHostedRelay: { relayUrl: "https://relay.test" } } : {}),
@@ -107,34 +117,45 @@ describe("isolated mobile self-hosted push registration", () => {
     }
   });
 
-  it("registers a native token with its paired environment and unregisters before removal", async () => {
-    const { id } = setup(true);
-    const stop = installSelfHostedPush();
-    try {
-      await refreshSelfHostedPush();
-      expect(
-        state.requests.find((request) => request.input.operation === "register"),
-      ).toMatchObject({
-        environmentId: id,
-        input: {
-          registration: {
-            deviceId: "self-hosted-device",
-            platform: "ios",
-            bundleId: "test.app",
-            apsEnvironment: "sandbox",
-            pushToken: "a".repeat(64),
+  it.each([false, true])(
+    "registers a native token and unregisters before removal (LAN preferred: %s)",
+    async (lanPreferred) => {
+      const { id } = setup(true);
+      if (lanPreferred) {
+        const entry = state.entries.get(id)!;
+        state.entries.set(id, {
+          ...entry,
+          profile: Option.some({ _tag: "BearerConnectionProfile", learned: true }),
+          alternateRoutes: [{ target: entry.target, profile: entry.profile }],
+        });
+      }
+      const stop = installSelfHostedPush();
+      try {
+        await refreshSelfHostedPush();
+        expect(
+          state.requests.find((request) => request.input.operation === "register"),
+        ).toMatchObject({
+          environmentId: id,
+          input: {
+            registration: {
+              deviceId: "self-hosted-device",
+              platform: "ios",
+              bundleId: "test.app",
+              apsEnvironment: "sandbox",
+              pushToken: "a".repeat(64),
+            },
           },
-        },
-      });
-      await unregisterSelfHostedPush(id);
-      expect(state.requests.at(-1)).toEqual({
-        environmentId: id,
-        input: { operation: "unregister", deviceId: "self-hosted-device" },
-      });
-    } finally {
-      stop();
-    }
-  });
+        });
+        await unregisterSelfHostedPush(id);
+        expect(state.requests.at(-1)).toEqual({
+          environmentId: id,
+          input: { operation: "unregister", deviceId: "self-hosted-device" },
+        });
+      } finally {
+        stop();
+      }
+    },
+  );
 
   it("does not register devices when the deployment does not advertise push", async () => {
     setup(true, false);

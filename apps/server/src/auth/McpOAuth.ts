@@ -47,6 +47,7 @@ import {
   timingSafeEqualBase64Url,
 } from "./utils.ts";
 import { requestUrl } from "../requestUrl.ts";
+import { relayPublicPrefix } from "@t3tools/relay-transport/protocol";
 
 // Request-derived origins support loopback, Tailscale and tunnels.
 // Signed client metadata keeps unauthenticated registration stateless.
@@ -77,7 +78,8 @@ export const requestUrls = (request: HttpServerRequest.HttpServerRequest): McpOA
     onNone: () => "http://localhost",
     onSome: (url) => url.origin,
   });
-  return { issuer: origin, resource: `${origin}/mcp` };
+  const prefix = relayPublicPrefix(request.headers["x-forwarded-prefix"] ?? "") ?? "";
+  return { issuer: origin + prefix, resource: `${origin}${prefix}/mcp` };
 };
 
 export const protectedResourceMetadata = (

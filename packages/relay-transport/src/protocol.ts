@@ -123,6 +123,16 @@ export function virtualRelayOrigin(route: string): string {
   return `https://${route}.t3-relay.invalid`;
 }
 
+export function relayPublicBaseUrl(relayUrl: string, environmentId: string): string {
+  return new URL(`/v1/environments/${encodeURIComponent(environmentId)}`, relayUrl).href;
+}
+
+export function relayPublicPrefix(pathname: string): string | null {
+  return /^\/v1\/environments\/[A-Za-z0-9_%:-]+\/?$/.test(pathname)
+    ? pathname.replace(/\/$/, "")
+    : null;
+}
+
 export function relayRouteFromUrl(value: string): string | null {
   try {
     const url = new URL(value);
