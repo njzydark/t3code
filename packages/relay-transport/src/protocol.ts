@@ -1,6 +1,7 @@
 export const RELAY_PROTOCOL = "t3-self-relay/1";
 export const FRAME_BYTES = 60 * 1024;
 export const STREAM_WINDOW = 256 * 1024;
+export const MAX_STREAM_WINDOW = 4 * 1024 * 1024;
 export const MAX_STREAMS = 64;
 export const MAX_SOCKET_MESSAGE = 16 * 1024 * 1024;
 export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
