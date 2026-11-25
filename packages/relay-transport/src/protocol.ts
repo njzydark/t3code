@@ -1,6 +1,7 @@
 export const RELAY_PROTOCOL = "t3-self-relay/1";
 export const FRAME_BYTES = 60 * 1024;
 export const STREAM_WINDOW = 256 * 1024;
+export const MAX_STREAM_WINDOW = 4 * 1024 * 1024;
 export const MAX_STREAMS = 64;
 export const MAX_SOCKET_MESSAGE = 16 * 1024 * 1024;
 export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
@@ -120,6 +121,16 @@ export function relaySocketUrl(relayUrl: string): string {
 
 export function virtualRelayOrigin(route: string): string {
   return `https://${route}.t3-relay.invalid`;
+}
+
+export function relayPublicBaseUrl(relayUrl: string, environmentId: string): string {
+  return new URL(`/v1/environments/${encodeURIComponent(environmentId)}`, relayUrl).href;
+}
+
+export function relayPublicPrefix(pathname: string): string | null {
+  return /^\/v1\/environments\/[A-Za-z0-9_%:-]+\/?$/.test(pathname)
+    ? pathname.replace(/\/$/, "")
+    : null;
 }
 
 export function relayRouteFromUrl(value: string): string | null {

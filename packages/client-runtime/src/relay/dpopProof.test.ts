@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as DpopProof from "./dpopProof.ts";
+import { ManagedRelayDpopSigner } from "./managedRelay.ts";
 
 const decodePublicJwk = Schema.decodeUnknownEffect(DpopPublicJwk);
 
@@ -40,6 +41,40 @@ const webCryptoProofKey = Effect.gen(function* () {
 });
 
 describe("DpopProof", () => {
+  it.effect("signs a platform alias for the transport's proof URL", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
+      const signer = yield* ManagedRelayDpopSigner;
+      const proof = yield* signer.createProof({
+        method: "POST",
+        url: "http://127.0.0.1:49123/api/auth/ws-ticket/rpc",
+        accessToken: "bound-token",
+      });
+      expect(
+        verifyDpopProof({
+          proof,
+          method: "POST",
+          url: "https://1234567890abcdef1234567890abcdef.t3-relay.invalid/api/auth/ws-ticket/rpc",
+          expectedThumbprint: yield* signer.thumbprint,
+          expectedAccessToken: "bound-token",
+          nowEpochSeconds: 1_700_000_000,
+        }),
+      ).toMatchObject({ ok: true });
+    }).pipe(
+      Effect.provide(
+        DpopProof.layerSigner({
+          keyStore: "indexed-db",
+          loadOrCreateKey: webCryptoProofKey,
+          proofUrl: (url) =>
+            url.replace(
+              "http://127.0.0.1:49123",
+              "https://1234567890abcdef1234567890abcdef.t3-relay.invalid",
+            ),
+        }).pipe(Layer.provide(layer)),
+      ),
+    ),
+  );
+
   it.effect("creates proofs the relay verifier accepts, with htu normalized and ath bound", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(1_700_000_000_000);

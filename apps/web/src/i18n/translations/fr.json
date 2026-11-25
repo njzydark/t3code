@@ -13020,5 +13020,18 @@
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
-  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted"
+  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
+  "fc73ae0b15389efa": "Associer",
+  "b3e6f662fc3e4f2d": "Client MCP",
+  "fc4c1acbd708e980": "Impossible de créer le jeton MCP.",
+  "a56e6900df35a4fb": "Choisissez les droits de l’agent. Le jeton ne sera affiché qu’une fois.",
+  "02b38ff73121821c": "Expiration : {date}",
+  "b96de95f92a8eeeb": "URL MCP",
+  "eb28894b5db17bb4": "Jeton MCP",
+  "007fd2aa13a38118": "Impossible de copier le jeton MCP.",
+  "93eca6c0c52fc6ea": "Copier l’URL et le jeton",
+  "a793a7a0ac6f2476": "Nom du client",
+  "d951fe94dcf0553f": "Accès",
+  "2bc30b6ab37805be": "Créer un jeton",
+  "fce4ad679a63ecd9": "Connectez un agent externe avec une URL et un jeton. Révoquez l’accès dans Clients autorisés."
 }

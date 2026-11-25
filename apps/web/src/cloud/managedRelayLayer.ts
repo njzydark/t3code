@@ -4,12 +4,13 @@ import * as Layer from "effect/Layer";
 
 import { loadOrCreateProofKey } from "./dpop";
 
-const layerRelayDpopSigner = DpopProof.layerSigner({
-  keyStore: "indexed-db",
-  loadOrCreateKey: loadOrCreateProofKey(),
-});
-
-export const layer = (relayUrl: string) =>
+export const layer = (relayUrl: string, proofUrl?: (url: string) => string) =>
   ManagedRelay.layer({ relayUrl, clientId: RelayWebClientId }).pipe(
-    Layer.provideMerge(layerRelayDpopSigner),
+    Layer.provideMerge(
+      DpopProof.layerSigner({
+        keyStore: "indexed-db",
+        loadOrCreateKey: loadOrCreateProofKey(),
+        ...(proofUrl ? { proofUrl } : {}),
+      }),
+    ),
   );

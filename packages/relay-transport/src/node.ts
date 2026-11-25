@@ -3,7 +3,7 @@
 import * as NodeHttp from "node:http";
 import { WebSocket } from "ws";
 
-import { RelayChannel, type RelayStream } from "./channel.ts";
+import { AsyncQueue, RelayChannel, type RelayStream } from "./channel.ts";
 import { decodeHeaders, readSocketMessages, writeSocketMessage } from "./client.ts";
 import {
   FrameKind,
@@ -11,6 +11,7 @@ import {
   MAX_SOCKET_MESSAGE,
   relaySocketUrl,
   validateRelayAddress,
+  virtualRelayOrigin,
   type RelayAddress,
 } from "./protocol.ts";
 import { openSocket, secureSocket, type RelaySocketFactory } from "./secure.ts";
@@ -56,6 +57,7 @@ const HOP_HEADERS = new Set([
   "x-forwarded-for",
   "x-forwarded-host",
   "x-forwarded-proto",
+  "x-forwarded-prefix",
   "content-length",
   "accept-encoding",
 ]);
@@ -103,6 +105,7 @@ async function proxyHttp(
   metadata: Record<string, unknown>,
   origin: URL,
   agent: NodeHttp.Agent,
+  relayOrigin: URL,
 ) {
   const target = requestTarget(origin, metadata.path);
   if (
@@ -113,7 +116,13 @@ async function proxyHttp(
   }
   const request = NodeHttp.request(target, {
     method: metadata.method,
-    headers: filteredHeaders(metadata.headers),
+    // All client aliases sign the same virtual origin. Never take proxy identity
+    // headers from the caller; only the connector's configured route owns it.
+    headers: {
+      ...filteredHeaders(metadata.headers),
+      host: relayOrigin.host,
+      "x-forwarded-proto": "https",
+    },
     agent,
   });
   const abort = () => request.destroy(new Error("Relay request cancelled."));
@@ -170,7 +179,12 @@ async function proxyHttp(
   }
 }
 
-async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unknown>, origin: URL) {
+async function proxyWebSocket(
+  stream: RelayStream,
+  metadata: Record<string, unknown>,
+  origin: URL,
+  relayOrigin: URL,
+) {
   const target = requestTarget(origin, metadata.path);
   target.protocol = "ws:";
   if (
@@ -181,6 +195,7 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
     throw new Error("Invalid relay WebSocket protocols.");
   }
   const socket = new WebSocket(target, metadata.protocols, {
+    headers: { host: relayOrigin.host, "x-forwarded-proto": "https" },
     maxPayload: MAX_SOCKET_MESSAGE,
     perMessageDeflate: false,
   });
@@ -287,6 +302,146 @@ async function proxyWebSocket(stream: RelayStream, metadata: Record<string, unkn
   }
 }
 
+const publicGatewayPaths = new Set([
+  "/mcp",
+  "/.well-known/t3/environment",
+  "/.well-known/oauth-protected-resource/mcp",
+  "/.well-known/oauth-authorization-server",
+  "/oauth/mcp/register",
+  "/oauth/mcp/decision",
+  "/oauth/mcp/token",
+  "/oauth/mcp/revoke",
+  "/api/peer-link/client-pairing",
+  "/api/links/thread/stream",
+  "/api/links/thread/history",
+  "/api/links/thread/item",
+]);
+
+async function readEnvironment(origin: URL, signal: AbortSignal) {
+  const response = await new Promise<NodeHttp.IncomingMessage>((resolve, reject) => {
+    const request = NodeHttp.get(
+      new URL("/.well-known/t3/environment", origin),
+      { signal },
+      resolve,
+    );
+    request.once("error", reject);
+  });
+  let text = "";
+  for await (const chunk of response) {
+    text += chunk.toString();
+    if (text.length > 64 * 1024) {
+      response.destroy();
+      throw new Error("Environment descriptor is too large.");
+    }
+  }
+  const value: unknown = JSON.parse(text);
+  if (
+    !isRecord(value) ||
+    typeof value.environmentId !== "string" ||
+    typeof value.label !== "string"
+  )
+    throw new Error("Invalid environment descriptor.");
+  return { environmentId: value.environmentId, label: value.label };
+}
+
+async function serveGateway(input: {
+  address: RelayAddress;
+  id: string;
+  ticket: string;
+  origin: URL;
+  environmentId: string;
+  agent: NodeHttp.Agent;
+  signal: AbortSignal;
+}) {
+  const socket = await openSocket(
+    relaySocketUrl(input.address.relayUrl),
+    { type: "session", id: input.id, ticket: input.ticket },
+    nodeSocket,
+    input.signal,
+  );
+  const messages = new AsyncQueue<string | Uint8Array>();
+  socket.binaryType = "arraybuffer";
+  socket.addEventListener("message", ({ data }) =>
+    messages.push(typeof data === "string" ? data : new Uint8Array(data as ArrayBuffer)),
+  );
+  let request: NodeHttp.ClientRequest | undefined;
+  let response: NodeHttp.IncomingMessage | undefined;
+  const abort = () => {
+    request?.destroy();
+    response?.destroy();
+    socket.close();
+    messages.end(new Error("Relay gateway disconnected."));
+  };
+  socket.addEventListener("close", abort);
+  socket.addEventListener("error", abort);
+  input.signal.addEventListener("abort", abort, { once: true });
+  const next = async () => {
+    const item = await messages.next();
+    if (item.done) throw new Error("Relay gateway closed.");
+    return item.value;
+  };
+  try {
+    const first = await next();
+    if (typeof first !== "string" || first.length > 60 * 1024)
+      throw new Error("Invalid gateway request.");
+    const metadata: unknown = JSON.parse(first);
+    if (
+      !isRecord(metadata) ||
+      typeof metadata.path !== "string" ||
+      typeof metadata.method !== "string" ||
+      !/^(GET|HEAD|POST|DELETE|OPTIONS)$/.test(metadata.method)
+    )
+      throw new Error("Invalid gateway request.");
+    const target = requestTarget(input.origin, metadata.path);
+    if (!publicGatewayPaths.has(target.pathname)) throw new Error("Unsupported gateway path.");
+    const publicOrigin = new URL(input.address.relayUrl);
+    request = NodeHttp.request(target, {
+      method: metadata.method,
+      agent: input.agent,
+      headers: {
+        ...filteredHeaders(metadata.headers),
+        host: publicOrigin.host,
+        "x-forwarded-proto": publicOrigin.protocol.slice(0, -1),
+        "x-forwarded-prefix": `/v1/environments/${encodeURIComponent(input.environmentId)}`,
+      },
+    });
+    const pending = new Promise<NodeHttp.IncomingMessage>((resolve, reject) => {
+      request!.once("response", resolve);
+      request!.once("error", reject);
+    });
+    void pending.catch(() => {});
+    for (;;) {
+      const message = await next();
+      if (message === "end") break;
+      if (!(message instanceof Uint8Array) || message.length > 60 * 1024)
+        throw new Error("Invalid gateway body.");
+      await new Promise<void>((resolve, reject) =>
+        request!.write(message, (error) => (error ? reject(error) : resolve())),
+      );
+      socket.send("ack");
+    }
+    request.end();
+    response = await pending;
+    socket.send(
+      JSON.stringify({ status: response.statusCode ?? 502, headers: responseHeaders(response) }),
+    );
+    for await (const bytes of response) {
+      const chunk = new Uint8Array(bytes);
+      for (let offset = 0; offset < chunk.length; offset += 60 * 1024) {
+        if ((await next()) !== "pull") throw new Error("Invalid gateway flow control.");
+        socket.send(chunk.slice(offset, offset + 60 * 1024));
+      }
+    }
+    if ((await next()) !== "pull") throw new Error("Invalid gateway flow control.");
+    socket.send("end");
+  } finally {
+    input.signal.removeEventListener("abort", abort);
+    request?.destroy();
+    response?.destroy();
+    abort();
+  }
+}
+
 export function validateLocalTarget(value: string): URL {
   const origin = new URL(value);
   if (
@@ -310,9 +465,20 @@ export async function connectHost(input: {
   readonly target: string;
   readonly signal: AbortSignal;
   readonly onConnected?: () => void;
+  readonly publishEnvironment?: boolean;
 }) {
   const address = validateRelayAddress(input.address);
   const origin = validateLocalTarget(input.target);
+  const relayOrigin = new URL(virtualRelayOrigin(address.route));
+  const environment = input.publishEnvironment
+    ? {
+        ...(await readEnvironment(
+          origin,
+          AbortSignal.any([input.signal, AbortSignal.timeout(10_000)]),
+        )),
+        peerId: address.peerId,
+      }
+    : undefined;
   const channels = new Set<RelayChannel>();
   const sessions = new Set<AbortController>();
   const socket = await openSocket(
@@ -321,6 +487,7 @@ export async function connectHost(input: {
       type: "host",
       route: address.route,
       token: input.registrationToken,
+      ...(environment ? { environment } : {}),
     },
     nodeSocket,
     input.signal,
@@ -359,8 +526,10 @@ export async function connectHost(input: {
       });
       const channel = new RelayChannel(wire, (stream, metadata) => {
         if (!isRecord(metadata)) return Promise.reject(new Error("Invalid relay stream."));
-        if (metadata.type === "http") return proxyHttp(stream, metadata, origin, agent);
-        if (metadata.type === "websocket") return proxyWebSocket(stream, metadata, origin);
+        if (metadata.type === "http")
+          return proxyHttp(stream, metadata, origin, agent, relayOrigin);
+        if (metadata.type === "websocket")
+          return proxyWebSocket(stream, metadata, origin, relayOrigin);
         return Promise.reject(new Error("Unknown relay stream type."));
       });
       sessions.delete(controller);
@@ -387,7 +556,7 @@ export async function connectHost(input: {
           const request: unknown = JSON.parse(event.data);
           if (
             !isRecord(request) ||
-            request.type !== "session" ||
+            (request.type !== "session" && request.type !== "gateway") ||
             typeof request.id !== "string" ||
             typeof request.ticket !== "string" ||
             !/^[a-f0-9]{64}$/.test(request.id) ||
@@ -395,7 +564,23 @@ export async function connectHost(input: {
           ) {
             throw new Error("Invalid relay session request.");
           }
-          void session(request.id, request.ticket).catch(() => {});
+          if (request.type === "gateway") {
+            if (!environment || sessions.size + channels.size >= 32)
+              throw new Error("Gateway unavailable.");
+            const controller = new AbortController();
+            sessions.add(controller);
+            void serveGateway({
+              address,
+              id: request.id,
+              ticket: request.ticket,
+              origin,
+              environmentId: environment.environmentId,
+              agent,
+              signal: AbortSignal.any([input.signal, controller.signal]),
+            })
+              .catch(() => {})
+              .finally(() => sessions.delete(controller));
+          } else void session(request.id, request.ticket).catch(() => {});
         } catch {
           reject(new Error("Invalid relay control message."));
         }

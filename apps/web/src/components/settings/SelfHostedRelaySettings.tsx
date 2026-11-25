@@ -1,3 +1,4 @@
+import { SelfHostedRelayMcpSettings } from "./SelfHostedRelayMcpSettings";
 import { T, msg, useGT, useMessages } from "gt-react";
 import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
@@ -131,144 +132,151 @@ export function SelfHostedRelaySettings({
 
   if (!canRead) return null;
   return (
-    <SettingsRow
-      {...searchableSetting("self-hosted-relay")}
-      description={
-        query.error ??
-        (data?.hasRegistrationToken
-          ? `${status} · ${data.relayUrl}`
-          : (data?.error ??
-            gt(
-              "Let other devices reach this host through your own relay. No inbound host port is needed.",
-            )))
-      }
-      control={
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-          <DialogTrigger render={<Button size="sm" variant="outline" disabled={!data} />}>
-            {data?.hasRegistrationToken ? gt("Configure") : gt("Set up")}
-          </DialogTrigger>
-          <DialogPopup className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>
-                <T>Self-hosted relay</T>
-              </DialogTitle>
-              <DialogDescription>
-                {gt(
-                  "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
-                  { environmentLabel },
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogPanel>
-              <div className="space-y-4">
-                <p role="status" className="text-sm text-muted-foreground">
-                  {status}
-                  {data?.error ? `: ${data.error}` : ""}
-                </p>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium">
-                    <T>Relay URL</T>
-                  </span>
-                  <Input
-                    aria-label={gt("Self-hosted relay URL")}
-                    type="url"
-                    value={relayUrl}
-                    placeholder="https://relay.example.com"
-                    disabled={!canEdit || busy}
-                    onChange={(event) => setRelayUrl(event.target.value)}
-                  />
-                  <span className="block text-xs text-muted-foreground">
-                    <T>Use an HTTPS origin. HTTP is allowed only for loopback testing.</T>
-                  </span>
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium">
-                    <T>Host registration token</T>
-                  </span>
-                  <Input
-                    aria-label={gt("Relay registration token")}
-                    type="password"
-                    autoComplete="new-password"
-                    spellCheck={false}
-                    value={token}
-                    maxLength={1024}
-                    placeholder={
-                      data?.hasRegistrationToken
-                        ? gt("Saved on this host; leave blank to keep")
-                        : gt("At least 32 characters")
-                    }
-                    disabled={!canEdit || busy}
-                    onChange={(event) => setToken(event.target.value)}
-                  />
-                  <span className="block text-xs text-muted-foreground">
-                    <T>
-                      Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This
-                      admits hosts to the relay; devices use pairing links instead. Stored privately
-                      on this host.
-                    </T>
-                  </span>
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  <T>
-                    To connect another device, use Create link under Authorized clients and choose
-                    Self-hosted relay.
-                  </T>
-                </p>
-                {error ? (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
+    <>
+      <SettingsRow
+        {...searchableSetting("self-hosted-relay")}
+        description={
+          query.error ??
+          (data?.hasRegistrationToken
+            ? `${status} · ${data.relayUrl}`
+            : (data?.error ??
+              gt(
+                "Let other devices reach this host through your own relay. No inbound host port is needed.",
+              )))
+        }
+        control={
+          <Dialog open={open} onOpenChange={handleOpenChange}>
+            <DialogTrigger render={<Button size="sm" variant="outline" disabled={!data} />}>
+              {data?.hasRegistrationToken ? gt("Configure") : gt("Set up")}
+            </DialogTrigger>
+            <DialogPopup className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>
+                  <T>Self-hosted relay</T>
+                </DialogTitle>
+                <DialogDescription>
+                  {gt(
+                    "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
+                    { environmentLabel },
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogPanel>
+                <div className="space-y-4">
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {status}
+                    {data?.error ? `: ${data.error}` : ""}
                   </p>
-                ) : null}
-              </div>
-            </DialogPanel>
-            <DialogFooter variant="bare">
-              <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button
-                        size="icon-sm"
-                        variant="ghost-muted"
-                        aria-label={gt("Relay connection actions")}
-                        disabled={!canEdit || busy || !data}
-                      />
-                    }
-                  >
-                    <EllipsisIcon className="size-4" />
-                  </MenuTrigger>
-                  <MenuPopup align="start">
-                    <MenuItem disabled={!data?.enabled} onClick={() => void update(false)}>
-                      <T>Disconnect relay</T>
-                    </MenuItem>
-                    <MenuItem
-                      variant="destructive"
-                      disabled={!data?.hasRegistrationToken && data?.phase !== "error"}
-                      onClick={() => void clear()}
-                    >
-                      <T>Remove relay configuration</T>
-                    </MenuItem>
-                  </MenuPopup>
-                </Menu>
-                <div className="flex gap-2">
-                  <Button variant="outline" disabled={busy} onClick={() => handleOpenChange(false)}>
-                    <T>Cancel</T>
-                  </Button>
-                  <Button
-                    disabled={!canSave || (data?.phase === "connected" && !dirty)}
-                    onClick={() => void update(true)}
-                  >
-                    {busy
-                      ? gt("Saving…")
-                      : data?.enabled
-                        ? gt("Save and reconnect")
-                        : gt("Save and connect")}
-                  </Button>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium">
+                      <T>Relay URL</T>
+                    </span>
+                    <Input
+                      aria-label={gt("Self-hosted relay URL")}
+                      type="url"
+                      value={relayUrl}
+                      placeholder="https://relay.example.com"
+                      disabled={!canEdit || busy}
+                      onChange={(event) => setRelayUrl(event.target.value)}
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                      <T>Use an HTTPS origin. HTTP is allowed only for loopback testing.</T>
+                    </span>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium">
+                      <T>Host registration token</T>
+                    </span>
+                    <Input
+                      aria-label={gt("Relay registration token")}
+                      type="password"
+                      autoComplete="new-password"
+                      spellCheck={false}
+                      value={token}
+                      maxLength={1024}
+                      placeholder={
+                        data?.hasRegistrationToken
+                          ? gt("Saved on this host; leave blank to keep")
+                          : gt("At least 32 characters")
+                      }
+                      disabled={!canEdit || busy}
+                      onChange={(event) => setToken(event.target.value)}
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                      <T>
+                        Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This
+                        admits hosts to the relay; devices use pairing links instead. Stored
+                        privately on this host.
+                      </T>
+                    </span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    <T>
+                      To connect another device, use Create link under Authorized clients and choose
+                      Self-hosted relay.
+                    </T>
+                  </p>
+                  {error ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {error}
+                    </p>
+                  ) : null}
                 </div>
-              </div>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      }
-    />
+              </DialogPanel>
+              <DialogFooter variant="bare">
+                <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                  <Menu>
+                    <MenuTrigger
+                      render={
+                        <Button
+                          size="icon-sm"
+                          variant="ghost-muted"
+                          aria-label={gt("Relay connection actions")}
+                          disabled={!canEdit || busy || !data}
+                        />
+                      }
+                    >
+                      <EllipsisIcon className="size-4" />
+                    </MenuTrigger>
+                    <MenuPopup align="start">
+                      <MenuItem disabled={!data?.enabled} onClick={() => void update(false)}>
+                        <T>Disconnect relay</T>
+                      </MenuItem>
+                      <MenuItem
+                        variant="destructive"
+                        disabled={!data?.hasRegistrationToken && data?.phase !== "error"}
+                        onClick={() => void clear()}
+                      >
+                        <T>Remove relay configuration</T>
+                      </MenuItem>
+                    </MenuPopup>
+                  </Menu>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => handleOpenChange(false)}
+                    >
+                      <T>Cancel</T>
+                    </Button>
+                    <Button
+                      disabled={!canSave || (data?.phase === "connected" && !dirty)}
+                      onClick={() => void update(true)}
+                    >
+                      {busy
+                        ? gt("Saving…")
+                        : data?.enabled
+                          ? gt("Save and reconnect")
+                          : gt("Save and connect")}
+                    </Button>
+                  </div>
+                </div>
+              </DialogFooter>
+            </DialogPopup>
+          </Dialog>
+        }
+      />
+      {data?.enabled ? <SelfHostedRelayMcpSettings environmentId={environmentId} /> : null}
+    </>
   );
 }

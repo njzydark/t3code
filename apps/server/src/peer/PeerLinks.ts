@@ -40,6 +40,7 @@ import { isLocalLoopbackHost, isTailnetHost } from "@t3tools/shared/hostClassifi
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { relayPublicPrefix } from "@t3tools/relay-transport/protocol";
 
 const PeerHttpApi = HttpApi.make(EnvironmentHttpApi.identifier)
   .add(EnvironmentHttpApi.groups.metadata)
@@ -197,7 +198,10 @@ const peerOrigin = (url: string) => {
       }),
     );
   }
-  return Effect.succeed(parsed.origin);
+  return Effect.succeed(
+    parsed.origin +
+      (relayPublicPrefix(/^\/v1\/environments\/[^/]+/.exec(parsed.pathname)?.[0] ?? "") ?? ""),
+  );
 };
 
 /** The system error under a failed connection, such as ECONNREFUSED or ENOTFOUND. */

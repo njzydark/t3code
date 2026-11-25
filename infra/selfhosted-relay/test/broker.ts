@@ -23,6 +23,7 @@ await built;
 export async function createRelayBroker(input: {
   readonly registrationToken: string;
   readonly webRoot?: string;
+  readonly tokens?: Readonly<Record<string, string>>;
 }) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -30,6 +31,8 @@ export async function createRelayBroker(input: {
     PORT: "0",
     T3_RELAY_REGISTRATION_TOKEN: input.registrationToken,
   };
+  delete env.T3_RELAY_TOKENS;
+  if (input.tokens) env.T3_RELAY_TOKENS = JSON.stringify(input.tokens);
   delete env.T3_RELAY_WEB_ROOT;
   delete env.T3_RELAY_PUSH_ENABLED;
   if (input.webRoot) env.T3_RELAY_WEB_ROOT = input.webRoot;

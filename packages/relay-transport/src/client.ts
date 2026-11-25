@@ -137,6 +137,13 @@ export class EncryptedRelayClient {
     return this.addresses.has(route);
   }
 
+  proofUrl(value: string): string {
+    const route = this.routeForUrl(value);
+    return route && this.hasRoute(route)
+      ? `${virtualRelayOrigin(route)}${relayRequestPath(value)}`
+      : value;
+  }
+
   addressForRoute(route: string): RelayAddress | undefined {
     return this.addresses.get(route);
   }

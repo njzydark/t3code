@@ -13020,5 +13020,18 @@
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
-  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted"
+  "7265eba3eb62adc6": "relay vps host encrypted registration token connect pairing self hosted",
+  "fc73ae0b15389efa": "Сопряжение",
+  "b3e6f662fc3e4f2d": "Клиент MCP",
+  "fc4c1acbd708e980": "Не удалось создать токен MCP.",
+  "a56e6900df35a4fb": "Выберите права агента. Токен будет показан только один раз.",
+  "02b38ff73121821c": "Истекает: {date}",
+  "b96de95f92a8eeeb": "URL MCP",
+  "eb28894b5db17bb4": "Токен MCP",
+  "007fd2aa13a38118": "Не удалось скопировать токен MCP.",
+  "93eca6c0c52fc6ea": "Скопировать URL и токен",
+  "a793a7a0ac6f2476": "Имя клиента",
+  "d951fe94dcf0553f": "Доступ",
+  "2bc30b6ab37805be": "Создать токен",
+  "fce4ad679a63ecd9": "Подключите внешнего агента с помощью URL и токена. Отозвать доступ можно в разделе авторизованных клиентов."
 }

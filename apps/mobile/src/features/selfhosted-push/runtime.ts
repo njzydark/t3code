@@ -3,6 +3,7 @@ import { m } from "../../i18n/messages";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as Option from "effect/Option";
+import { connectionRoutes } from "@t3tools/client-runtime/connection";
 import { Atom } from "effect/reactivity";
 import { AppState, Platform } from "react-native";
 import {
@@ -36,7 +37,9 @@ const targetsAtom = Atom.make((get) => {
   const catalog = get(environmentCatalog.catalogValueAtom);
   const configs = get(environmentServerConfigsAtom);
   return [...catalog.entries].flatMap(([environmentId, entry]) => {
-    const profile = Option.getOrNull(entry.profile);
+    const profile = connectionRoutes(entry)
+      .map((route) => Option.getOrNull(route.profile))
+      .find((profile) => profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay);
     return entry.enabled &&
       configs.has(environmentId) &&
       profile?._tag === "BearerConnectionProfile" &&
@@ -47,8 +50,10 @@ const targetsAtom = Atom.make((get) => {
 }).pipe(Atom.withEquality((a, b) => JSON.stringify(a) === JSON.stringify(b)));
 export const hasSelfHostedPushTargetsAtom = Atom.make((get) =>
   [...get(environmentCatalog.catalogValueAtom).entries.values()].some((entry) => {
-    const profile = Option.getOrNull(entry.profile);
-    return profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay !== undefined;
+    return connectionRoutes(entry).some((route) => {
+      const profile = Option.getOrNull(route.profile);
+      return profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay !== undefined;
+    });
   }),
 );
 

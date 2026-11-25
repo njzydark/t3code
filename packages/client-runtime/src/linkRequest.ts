@@ -16,6 +16,7 @@ import * as Option from "effect/Option";
 import type { EnvironmentPresentation } from "./connection/presentation.ts";
 import { connectionRoutes, routeHttpBaseUrl } from "./connection/routes.ts";
 import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
+import { relayPublicBaseUrl, relayPublicPrefix } from "@t3tools/relay-transport/protocol";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
@@ -61,10 +62,12 @@ const parsedUrl = (url: string) => {
   }
 };
 
-/** The http or https origin of an address: what the server links, and nothing else in it. */
+/** Preserve the environment path when several machines share one relay origin. */
 const originOf = (url: string) => {
   const parsed = parsedUrl(url);
-  return parsed?.protocol === "http:" || parsed?.protocol === "https:" ? parsed.origin : undefined;
+  return parsed?.protocol === "http:" || parsed?.protocol === "https:"
+    ? `${parsed.origin}${relayPublicPrefix(/^\/v1\/environments\/[^/]+/.exec(parsed.pathname)?.[0] ?? "") ?? ""}`
+    : undefined;
 };
 
 /** Where a link to `address` sends its pairing code, which a username or path in it can hide. */
@@ -126,6 +129,9 @@ export function linkableMachines(input: {
         (endpoint) => endpoint.httpBaseUrl,
       );
       const routes = connectionRoutes(environment.entry).flatMap((route) => {
+        const profile = Option.getOrNull(route.profile);
+        if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay)
+          return [relayPublicBaseUrl(profile.selfHostedRelay.relayUrl, environment.environmentId)];
         const url = route.target._tag === "RelayConnectionTarget" ? null : routeHttpBaseUrl(route);
         return url === null ? [] : [url];
       });

@@ -58,14 +58,21 @@ connected, use **Authorized clients > Create link > Self-hosted relay** to pair
 another device. A Linux host can use the fork's CLI instead; see the
 [host and CLI connection guide](../../docs/user/self-hosted-relay.md#connect-an-environment).
 
+Use `T3_RELAY_TOKENS` with a JSON map of group names to secrets for separate
+host directories; `T3_RELAY_REGISTRATION_TOKEN` remains supported. Paired
+clients discover online machines in the same group through Settings, then pair
+each machine using its own code. See the [directory and MCP guide](../../docs/user/self-hosted-relay.md#discover-other-environments)
+for public MCP tokens and linked environments on one domain with path routing.
+
 The registration token admits hosts to the relay; devices use private,
 one-use pairing links instead. Never put either credential in an image or
 share it publicly. The `web` image opens an unconnected client for new
 visitors, not a public list of hosts. The `core` image does not serve web pages.
 
 Connection state is in memory; restarting the relay drops active connections.
-Host identity and T3 data stay on the host. Traffic is encrypted between host
-and client, but browsers must trust the operator serving their web app.
+Host identity and T3 data stay on the host. Private app traffic is encrypted
+between host and client. Public MCP and peer links terminate HTTPS at the relay,
+whose operator can read their credentials; browsers also trust the web app host.
 Read the [trust and compatibility limits](../../docs/user/self-hosted-relay.md#trust-and-compatibility)
 before exposing the service.
 

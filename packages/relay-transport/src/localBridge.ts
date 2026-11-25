@@ -60,8 +60,29 @@ export async function serveLocalRelayRequest(
       await upgraded;
       await bridge.writeSocket(request.id, bytesToBase64(bytes), binary);
     });
-    socket.onerror = () => failed(new Error("Relay WebSocket failed."));
+    let rejection: Promise<void> | undefined;
+    socket.addEventListener("rejection", (event) => {
+      if (
+        !("status" in event) ||
+        typeof event.status !== "number" ||
+        !("headers" in event) ||
+        !Array.isArray(event.headers)
+      )
+        return;
+      rejection = bridge
+        .respond(request.id, event.status, event.headers)
+        .then(() => bridge.finish(request.id));
+      void rejection.catch(failed);
+    });
+    socket.onerror = () => {
+      if (rejection) void rejection.then(finished, failed);
+      else failed(new Error("Relay WebSocket failed."));
+    };
     socket.onclose = () => {
+      if (rejection) {
+        void rejection.then(finished, failed);
+        return;
+      }
       bridge.close(request.id);
       finished();
     };

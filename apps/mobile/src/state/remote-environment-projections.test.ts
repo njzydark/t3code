@@ -128,5 +128,33 @@ describe("remote environment projections", () => {
       wsBaseUrl: "wss://catalog-updated.example.test",
       bearerToken: null,
     });
+
+    for (const httpBaseUrl of [
+      "http://127.0.0.1:49123/",
+      "http://192.168.1.10:3773/",
+      "http://127.0.0.1:49124/",
+    ]) {
+      harness.registry.set(
+        harness.preparedConnectionAtom(ENVIRONMENT_ID),
+        Option.some({
+          ...prepared(ENVIRONMENT_ID, "direct", "unused"),
+          httpBaseUrl,
+          socketUrl: `${httpBaseUrl.replace(/^http/, "ws")}ws?wsTicket=redacted`,
+          httpAuthorization: {
+            _tag: "Dpop",
+            accessToken: "key-bound-session",
+            expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+          },
+        }),
+      );
+      const current = harness.registry.get(firstConsumer);
+      expect(current).toMatchObject({
+        httpBaseUrl,
+        authenticationMethod: "dpop",
+        dpopAccessToken: "key-bound-session",
+        bearerToken: null,
+      });
+      expect(current?.relayManaged).toBeUndefined();
+    }
   });
 });

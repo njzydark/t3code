@@ -57,7 +57,8 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 6. **Credential exposure.** Tokens or secrets reaching logs, traces, telemetry,
    the relay, socket URLs (outside short-lived tickets), the access read model,
    or error messages. A token sent to an address that has not answered as the
-   expected environment, or a token paired over HTTPS sent over plain HTTP.
+   expected environment. A paired bearer token starting to travel over plain
+   HTTP after pairing over HTTPS.
 7. **Impersonation and egress.** Another process or the relay impersonating an
    environment; endpoint discovery, previews, or webhooks used to reach
    arbitrary hosts (SSRF).
@@ -86,6 +87,14 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 - Plain HTTP on a LAN or tailnet is the user's choice. `t3 serve` warns when
   advertising a non-loopback HTTP address. The iOS app allows arbitrary loads so
   it can reach these addresses.
+- With Network access enabled, self-hosted relay clients may use the host's
+  advertised private addresses with their DPoP-bound session. Direct routes keep
+  the pairing's scopes and revocation; HTTP exposes traffic to the local network.
+- The self-hosted relay's public MCP and peer-link gateway terminates HTTPS.
+  Its operator can read these requests and credentials. Private paired-app
+  traffic remains Noise encrypted. Registration-token groups expose an online
+  directory, not environment sessions; hosts enforce MCP grants and revocation.
+  The gateway forwards only allowlisted paths to its fixed loopback T3 server.
 - `access-control-allow-origin: *` on the environment API. Auth is a bearer
   header, so the wildcard grants nothing a caller without a token lacks.
 - Rendered Markdown loads remote images and media from the host its author

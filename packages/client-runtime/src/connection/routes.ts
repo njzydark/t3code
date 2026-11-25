@@ -98,9 +98,10 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
       return "ssh";
     case "PrimaryConnectionTarget":
     case "BearerConnectionTarget": {
+      const profile = Option.getOrNull(route.profile);
+      if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay) return "relay";
       const hostname = routeHostname(route);
       if (hostname === null) return "public";
-      const profile = Option.getOrNull(route.profile);
       return directAddressKind(
         hostname,
         profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale",
@@ -265,6 +266,7 @@ export function mergeLearnedRoutes(input: {
   readonly reported: ReadonlyArray<ReportedEndpoint>;
   /** Plain HTTP routes are unusable from an HTTPS page (mixed content). */
   readonly allowInsecure: boolean;
+  readonly selfHostedRelayDpop?: boolean;
 }): ReadonlyArray<ConnectionRoute> | null {
   const { entry } = input;
   const active = input.activeRoute.target;
@@ -273,19 +275,25 @@ export function mergeLearnedRoutes(input: {
     return null;
   }
   const activeProfile = Option.getOrNull(input.activeRoute.profile);
-  if (activeProfile?._tag === "BearerConnectionProfile" && activeProfile.selfHostedRelay) {
-    return null;
-  }
+  const credentialId =
+    active._tag === "BearerConnectionTarget"
+      ? credentialConnectionId(active.connectionId)
+      : undefined;
+  const credentialRoute = saved.find((route) => connectionRouteId(route.target) === credentialId);
+  const credentialProfile = credentialRoute ? Option.getOrNull(credentialRoute.profile) : null;
+  const selfHostedRelay =
+    credentialProfile?._tag === "BearerConnectionProfile" &&
+    credentialProfile.selfHostedRelay !== undefined;
+  if (selfHostedRelay && input.selfHostedRelayDpop !== true) return null;
   const authorization =
     active._tag === "RelayConnectionTarget" ||
     (activeProfile?._tag === "BearerConnectionProfile" &&
       activeProfile.authorization === "t3-connect")
       ? ("t3-connect" as const)
-      : undefined;
-  const sharedCredential =
-    authorization === undefined && active._tag === "BearerConnectionTarget"
-      ? credentialConnectionId(active.connectionId)
-      : undefined;
+      : selfHostedRelay
+        ? ("self-hosted-relay" as const)
+        : undefined;
+  const sharedCredential = authorization === "t3-connect" ? undefined : credentialId;
   const reported = new Map<string, URL>();
   const tailscaleOrigins = new Set<string>();
   for (const endpoint of input.reported) {
@@ -296,9 +304,11 @@ export function mergeLearnedRoutes(input: {
       continue;
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+    if (url.username || url.password) continue;
     if (url.protocol === "http:" && !input.allowInsecure) continue;
     // A loopback address names whichever device opens it, never the server.
     if (isLocalLoopbackHost(url.hostname)) continue;
+    if (selfHostedRelay && directAddressKind(url.hostname) === "public") continue;
     reported.set(url.origin, url);
     if (endpoint.kind === "tailnet") tailscaleOrigins.add(url.origin);
   }
@@ -329,6 +339,7 @@ export function mergeLearnedRoutes(input: {
     if (
       url.protocol === "http:" &&
       sharedCredential !== undefined &&
+      authorization !== "self-hosted-relay" &&
       !tailscaleOrigins.has(url.origin) &&
       !tokenAllowsPlainHttp(saved, sharedCredential)
     ) {
@@ -399,6 +410,14 @@ export function sendsTokenInClear(
   const profile = Option.getOrNull(route.profile);
   if (profile?._tag !== "BearerConnectionProfile" || profile.authorization === "t3-connect") {
     return false;
+  }
+  if (profile.authorization === "self-hosted-relay") {
+    const source = routes.find(
+      (route) => connectionRouteId(route.target) === credentialConnectionId(profile.connectionId),
+    );
+    const sourceProfile = source ? Option.getOrNull(source.profile) : null;
+    if (sourceProfile?._tag === "BearerConnectionProfile" && sourceProfile.selfHostedRelay)
+      return false;
   }
   if ((tailscale ?? profile.network === "tailscale") || !profile.httpBaseUrl.startsWith("http:")) {
     return false;
