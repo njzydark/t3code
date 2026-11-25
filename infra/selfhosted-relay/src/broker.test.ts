@@ -23,6 +23,11 @@ async function fixture() {
   const broker = await createRelayBroker({ registrationToken: TOKEN });
   const relayUrl = broker.url;
   const uploads: Uint8Array[] = [];
+  const requests: Array<{
+    url: string;
+    host: string | undefined;
+    protocol: string | string[] | undefined;
+  }> = [];
   const connections = new Set<NodeNet.Socket>();
   let cancelStarted!: () => void;
   let cancelClosed!: () => void;
@@ -65,6 +70,14 @@ async function fixture() {
       else response.end();
     }
   });
+  const recordRequest = (request: NodeHttp.IncomingMessage) =>
+    requests.push({
+      url: request.url ?? "",
+      host: request.headers.host,
+      protocol: request.headers["x-forwarded-proto"],
+    });
+  http.prependListener("request", recordRequest);
+  http.on("upgrade", recordRequest);
   http.on("connection", (socket) => connections.add(socket));
   const ws = new WebSocketServer({
     server: http,
@@ -105,6 +118,7 @@ async function fixture() {
     started,
     cancelled,
     connections,
+    requests,
     async [Symbol.asyncDispose]() {
       client.dispose();
       controller.abort();
@@ -118,6 +132,51 @@ async function fixture() {
 }
 
 describe("self-hosted encrypted relay", () => {
+  it("uses one proof origin for web and mobile aliases and ignores caller proxy headers", async () => {
+    await using test = await fixture();
+    const path = "/api/auth/session";
+    for (const endpoint of [
+      `https://web.example.com/__t3_relay/${test.address.route}/`,
+      "http://127.0.0.1:49123/",
+    ]) {
+      test.client.register(test.address, endpoint);
+      const url = `${endpoint}${path.slice(1)}`;
+      expect(test.client.proofUrl(url)).toBe(`${test.endpoint}${path}`);
+      const response = await test.client.fetch(url, {
+        headers: {
+          authorization: "Bearer t3-session",
+          host: "attacker.example",
+          "x-forwarded-host": "attacker.example",
+          "x-forwarded-proto": "http",
+        },
+      });
+      expect(await response.text()).toBe("hello");
+      const socket = test.client.socket(`${endpoint.replace(/^http/, "ws")}ws?dpop=proof`);
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve();
+        socket.onerror = () => reject(new Error("Socket failed"));
+      });
+      const closed = new Promise<void>((resolve) => {
+        socket.onclose = () => resolve();
+      });
+      socket.close();
+      await closed;
+    }
+    expect(test.requests).toEqual([
+      { url: path, host: `${test.address.route}.t3-relay.invalid`, protocol: "https" },
+      { url: "/ws?dpop=proof", host: `${test.address.route}.t3-relay.invalid`, protocol: "https" },
+      { url: path, host: `${test.address.route}.t3-relay.invalid`, protocol: "https" },
+      { url: "/ws?dpop=proof", host: `${test.address.route}.t3-relay.invalid`, protocol: "https" },
+    ]);
+    expect(test.client.proofUrl("http://192.168.1.10:3773/api/auth/session")).toBe(
+      "http://192.168.1.10:3773/api/auth/session",
+    );
+    test.client.forget(test.address.route);
+    expect(test.client.proofUrl("http://127.0.0.1:49123/api/auth/session")).toBe(
+      "http://127.0.0.1:49123/api/auth/session",
+    );
+  });
+
   it("preserves server authorization, HTTP range and headers, and streams uploads larger than its window", async () => {
     await using test = await fixture();
     const unauthorized = await test.client.fetch(`${test.endpoint}/file`);

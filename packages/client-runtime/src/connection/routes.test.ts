@@ -155,6 +155,72 @@ describe("learned routes", () => {
     routes?.map((route) => connectionRouteId(route.target)) ?? null;
   const profileOf = (route: ConnectionRoute) => Option.getOrThrow(route.profile);
 
+  it.each([true, false])(
+    "learns direct routes from a key-bound self-hosted relay (plain HTTP allowed: %s)",
+    (allowInsecure) => {
+      const route = direct(
+        "self-relay",
+        "https://1234567890abcdef1234567890abcdef.t3-relay.invalid/",
+      );
+      const relay = {
+        ...route,
+        profile: Option.some(
+          new BearerConnectionProfile({
+            ...(profileOf(route) as BearerConnectionProfile),
+            selfHostedRelay: {
+              relayUrl: "https://relay.example.com",
+              route: "1234567890abcdef1234567890abcdef",
+              peerId: "pinned-host",
+            },
+          }),
+        ),
+      };
+      expect(connectionRouteKind(relay)).toBe("relay");
+      const reported = [
+        { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
+        { kind: "lan", httpBaseUrl: "https://192.168.1.10:3774/" },
+        { kind: "lan", httpBaseUrl: "http://127.0.0.1:3773/" },
+        { kind: "lan", httpBaseUrl: "http://public.example.com:3773/" },
+      ];
+      const entry = { ...relay, enabled: true };
+      const routes = mergeLearnedRoutes({
+        entry,
+        activeRoute: relay,
+        reported,
+        allowInsecure,
+        selfHostedRelayDpop: true,
+      })!;
+      expect(routes).toHaveLength(allowInsecure ? 3 : 2);
+      expect(routes.at(-1)).toEqual(relay);
+      const learned = routes[0]!;
+      expect(profileOf(learned)).toMatchObject({
+        learned: true,
+        authorization: "self-hosted-relay",
+      });
+      expect(credentialConnectionId(connectionRouteId(learned.target))).toBe("self-relay");
+      expect(sendsTokenInClear(routes, learned)).toBe(false);
+      expect(usableRoutes(entryWithRoutes(entry, routes))).toEqual(routes);
+      expect(routesAfterRemoving(routes, "self-relay")).toEqual([]);
+      expect(
+        mergeLearnedRoutes({
+          entry: entryWithRoutes(entry, routes),
+          activeRoute: learned,
+          reported,
+          allowInsecure,
+          selfHostedRelayDpop: true,
+        }),
+      ).toBeNull();
+      const removed = mergeLearnedRoutes({
+        entry: entryWithRoutes(entry, routes),
+        activeRoute: learned,
+        reported: [],
+        allowInsecure,
+        selfHostedRelayDpop: true,
+      });
+      expect(removed).toEqual([relay]);
+    },
+  );
+
   it("keeps relay traffic encrypted and invalidates routing trust when the pinned peer changes", () => {
     const route = direct(
       "self-relay",

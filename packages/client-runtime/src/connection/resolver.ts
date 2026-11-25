@@ -126,6 +126,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
 
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
+  const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
   const selfHostedRelay = yield* ClientCapabilities.SelfHostedRelayGateway;
 
@@ -170,6 +171,21 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         }),
       ),
     );
+    if (profile.authorization === "self-hosted-relay") {
+      const source = yield* profiles.get(credentialConnectionId(target.connectionId));
+      if (
+        credential._tag !== "DpopConnectionCredential" ||
+        Option.isNone(source) ||
+        !isBearerProfile(source.value) ||
+        source.value.selfHostedRelay === undefined ||
+        source.value.environmentId !== target.environmentId
+      ) {
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          ...translatableDetail(msg("The saved bearer credential is unavailable.")),
+        });
+      }
+    }
     const authorized =
       credential._tag === "DpopConnectionCredential"
         ? yield* remote.authorizeDirectDpop({

@@ -209,6 +209,9 @@ export const make = Effect.gen(function* () {
     );
 
   const checkRoute = (entry: ConnectionCatalogEntry, route: ConnectionRoute) => {
+    const profile = Option.getOrNull(route.profile);
+    if (profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay)
+      return Effect.succeed<RouteCheck>("unchecked");
     const httpBaseUrl = routeHttpBaseUrl(route);
     if (httpBaseUrl === null) return Effect.succeed<RouteCheck>("unchecked");
     return checkDescriptor(httpBaseUrl, entry.target.environmentId, routeKeepsItsHost(route)).pipe(

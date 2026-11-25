@@ -67,15 +67,9 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         httpBaseUrl,
         wsBaseUrl,
         bearerToken: authorization?._tag === "Bearer" ? authorization.token : null,
-        ...(relayManaged
-          ? {
-              authenticationMethod: "dpop" as const,
-              relayManaged: true as const,
-              ...(authorization?._tag === "Dpop"
-                ? { dpopAccessToken: authorization.accessToken }
-                : {}),
-            }
-          : { authenticationMethod: "bearer" as const }),
+        authenticationMethod: authorization?._tag === "Dpop" || relayManaged ? "dpop" : "bearer",
+        ...(relayManaged ? { relayManaged: true as const } : {}),
+        ...(authorization?._tag === "Dpop" ? { dpopAccessToken: authorization.accessToken } : {}),
       };
       return previous;
     }).pipe(Atom.withLabel(`mobile:saved-connection:${environmentId}`));

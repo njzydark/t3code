@@ -15,7 +15,10 @@ execution model.
 - **Routes are untrusted hints.** Only the connecting client can prove reachability. Never fall back
   to loopback when a shareable endpoint is unavailable (loopback names the client's own machine).
   Verify a direct or learned route answers as the expected environment before sending credentials,
-  and never let a token paired over HTTPS downgrade to plain HTTP.
+  and never let a paired bearer token downgrade to plain HTTP. A self-hosted relay pairing may
+  authorize the host's advertised private addresses only with its DPoP-bound session; the resolver
+  refuses a learned route if its source pairing is missing or no longer key-bound. These routes
+  use the advertised address's transport, so HTTP provides no traffic encryption.
 - Pull request routing trust covers the saved route set: adding or changing a route revokes trust;
   reordering does not.
 
