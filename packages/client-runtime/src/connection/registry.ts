@@ -947,11 +947,19 @@ export const make = Effect.gen(function* () {
         }
         const entry = (yield* SubscriptionRef.get(entries)).get(input.environmentId);
         if (entry === undefined) return Option.none<ConnectionCatalogEntry>();
+        const credential =
+          input.activeRoute.target._tag === "BearerConnectionTarget"
+            ? yield* credentials.get(credentialConnectionId(input.activeRoute.target.connectionId))
+            : Option.none();
         const routes = mergeLearnedRoutes({
           entry,
           activeRoute: input.activeRoute,
           reported: input.reported,
           allowInsecure: allowInsecureRoutes,
+          selfHostedRelayDpop: Option.exists(
+            credential,
+            (value) => value._tag === "DpopConnectionCredential",
+          ),
         });
         if (routes === null) return Option.none<ConnectionCatalogEntry>();
         const next = entryWithRoutes(entry, routes);

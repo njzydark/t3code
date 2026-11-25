@@ -126,9 +126,32 @@ the self-hosted relay. Enable **Settings → Sharing & access → Preview tunnel
 the host and pair with terminal access. Forwarded ports can be stopped from the
 command palette and close when you quit the desktop app.
 
+## Prefer a local connection
+
+Enable **Network access** on the host to let paired clients use its LAN and
+Tailscale addresses. Changing this setting restarts the host's desktop app.
+On web, desktop, iOS and Android, a key-bound relay pairing automatically adds
+the host's reported local addresses as routes. T3 checks that an address reaches
+the same environment before connecting, prefers available direct routes, and
+falls back to the relay when they cannot be used. See
+[multiple routes](./remote-access.md#reach-one-machine-several-ways) to change
+their order or see the route in use.
+
+Older pairings with bearer-only credentials stay on the encrypted relay. Pair
+again with a current host and client to enable automatic direct routes. An
+HTTPS web page can use only HTTPS direct addresses; native clients can also
+use HTTP addresses. Allow local-network access on your phone when prompted.
+
+A direct route uses that address's HTTP or HTTPS transport instead of the
+relay's Noise channel. Key-bound authorization prevents a captured token from
+being used without the client's key; it does not encrypt HTTP traffic. Use an
+HTTPS endpoint when the local network must not see the traffic. Disabling
+Network access removes the advertised LAN addresses, while relay access can
+remain enabled.
+
 ## Trust and compatibility
 
-The host and client establish a Noise encrypted session through the relay.
+When using the relay, the host and client establish a Noise encrypted session.
 The pairing link pins the host's public identity. The relay forwards encrypted
 traffic and can observe connection addresses, timing and sizes. It does not
 need host private keys or T3 session credentials. Verify pairing links through
@@ -138,8 +161,9 @@ The browser loads its executable app from the web host. That host must be
 trusted to serve the intended build; encryption cannot protect a browser from
 an operator who replaces the client JavaScript.
 
-Existing T3 bearer sessions and permission checks remain in effect inside the
-encrypted channel. Changing the host identity requires pairing again. Rotate
+Existing T3 session and permission checks remain in effect. Automatic direct
+routes share the key-bound pairing's session and revocation; bearer credentials
+are not sent to a learned HTTP address. Changing the host identity requires pairing again. Rotate
 the registration token on the relay and hosts if it is disclosed, and revoke
 paired client sessions through T3's existing access controls.
 

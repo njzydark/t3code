@@ -72,9 +72,9 @@ const layerRuntime = Layer.mergeAll(
   Socket.layerWebSocketConstructorGlobal,
   ClientTracer.layer,
   layerRelayTracing,
-  ManagedRelayLayer.layer(configuredRelayUrl()).pipe(
-    Layer.provide(Layer.mergeAll(layerHttpClient, Dpop.layer)),
-  ),
+  ManagedRelayLayer.layer(configuredRelayUrl(), (url) =>
+    SelfHostedRelay.relayNetwork.transport.proofUrl(url),
+  ).pipe(Layer.provide(Layer.mergeAll(layerHttpClient, Dpop.layer))),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<

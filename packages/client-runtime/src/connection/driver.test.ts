@@ -134,6 +134,9 @@ describe("ConnectionDriver self-hosted relay recovery", () => {
         const recovered = yield* Effect.scoped(connect);
         expect(recovered.prepared.environmentId).toBe(target.environmentId);
         expect(recovered.prepared.httpBaseUrl).toBe(profile.httpBaseUrl);
+        expect(yield* driver.preflight(entry, { target, profile: Option.some(profile) })).toBe(
+          "unchecked",
+        );
       }),
   );
 });

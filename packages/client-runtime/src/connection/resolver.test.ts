@@ -175,9 +175,14 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 });
 
 describe("ConnectionResolver", () => {
-  it.effect.each(["bearer", "dpop"] as const)(
-    "restores a saved %s relay through its gateway",
-    (authorization) =>
+  it.effect.each([
+    { authorization: "bearer", learned: false },
+    { authorization: "dpop", learned: false },
+    { authorization: "bearer", learned: true },
+    { authorization: "dpop", learned: true },
+  ] as const)(
+    "restores $authorization relay credentials (learned LAN: $learned)",
+    ({ authorization, learned }) =>
       Effect.gen(function* () {
         const target = new BearerConnectionTarget({
           environmentId: ENVIRONMENT_ID,
@@ -197,11 +202,27 @@ describe("ConnectionResolver", () => {
           wsBaseUrl: `wss://${address.route}.t3-relay.invalid`,
           selfHostedRelay: address,
         });
-        const endpoint = {
-          httpBaseUrl: "http://127.0.0.1:49123/",
-          wsBaseUrl: "ws://127.0.0.1:49123/",
-        };
+        const endpoint = learned
+          ? { httpBaseUrl: "http://192.168.1.10:3773/", wsBaseUrl: "ws://192.168.1.10:3773/" }
+          : { httpBaseUrl: "http://127.0.0.1:49123/", wsBaseUrl: "ws://127.0.0.1:49123/" };
+        const selected = learned
+          ? new BearerConnectionTarget({
+              ...target,
+              connectionId: `learned:${ENVIRONMENT_ID}:${endpoint.httpBaseUrl}@${target.connectionId}`,
+            })
+          : target;
+        const selectedProfile = learned
+          ? new BearerConnectionProfile({
+              connectionId: selected.connectionId,
+              environmentId: ENVIRONMENT_ID,
+              label: "LAN",
+              ...endpoint,
+              learned: true,
+              authorization: "self-hosted-relay",
+            })
+          : profile;
         const layerBroker = yield* makeDependencies({
+          profiles: [profile],
           credentials: [
             [
               target.connectionId,
@@ -241,7 +262,12 @@ describe("ConnectionResolver", () => {
             ),
           ),
         );
-        const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+        const connection = broker.prepare(catalogEntry(selected, Option.some(selectedProfile)));
+        if (learned && authorization === "bearer") {
+          expect(yield* Effect.flip(connection)).toMatchObject({ reason: "configuration" });
+          return;
+        }
+        const prepared = yield* connection;
         expect(prepared.httpBaseUrl).toBe(endpoint.httpBaseUrl);
         expect(prepared.httpAuthorization).toEqual(
           authorization === "bearer"

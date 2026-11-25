@@ -70,6 +70,7 @@ export const createProof = Effect.fn("DpopProof.createProof")(function* (input: 
 export const layerSigner = <E, R>(options: {
   readonly keyStore: ManagedRelayDpopKeyLoadError["keyStore"];
   readonly loadOrCreateKey: Effect.Effect<DpopProofKey, E, R>;
+  readonly proofUrl?: (url: string) => string;
 }) =>
   Layer.effect(
     ManagedRelayDpopSigner,
@@ -104,7 +105,11 @@ export const layerSigner = <E, R>(options: {
           const creationError = (cause: unknown) =>
             new ManagedRelayDpopProofCreationError({ method: input.method, url: input.url, cause });
           const loaded = yield* loadKey.pipe(Effect.mapError(creationError));
-          return yield* createProof({ ...input, key: loaded.key }).pipe(
+          return yield* createProof({
+            ...input,
+            url: options.proofUrl?.(input.url) ?? input.url,
+            key: loaded.key,
+          }).pipe(
             Effect.provideService(SecureRandom.SecureRandom, random),
             Effect.provideService(Digest.Digest, digest),
             Effect.mapError(creationError),
