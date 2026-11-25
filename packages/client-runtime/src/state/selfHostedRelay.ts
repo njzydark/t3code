@@ -39,12 +39,13 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
     for (const [environmentId, entry] of entries) {
       if (
         !entry.enabled ||
-        !connectionRoutes(entry).some((route) => {
-          const profile = Option.getOrNull(route.profile);
-          return (
-            profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay !== undefined
-          );
-        })
+        (entry.target._tag !== "PrimaryConnectionTarget" &&
+          !connectionRoutes(entry).some((route) => {
+            const profile = Option.getOrNull(route.profile);
+            return (
+              profile?._tag === "BearerConnectionProfile" && profile.selfHostedRelay !== undefined
+            );
+          }))
       )
         continue;
       const result = get(directory({ environmentId, input: {} }));

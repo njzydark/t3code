@@ -132,12 +132,19 @@ command palette and close when you quit the desktop app.
 
 ## Discover other environments
 
-After pairing your first environment, open **Settings → Environments** on web,
-desktop, iOS or Android. Other online environments registered with the same
-relay token appear there. Choose a machine and enter a pairing code issued on
+In the desktop app or a web client served by a T3 environment configured with
+the relay, open **Settings → Environments** to discover other online environments
+registered with the same relay token. Clients without a configured host,
+including mobile and the standalone relay web app, need to pair an environment
+through that relay first. Choose a machine and enter a pairing code issued on
 that machine. The directory refreshes while this screen is open; stopped hosts
 are omitted. Discovery shares names and identities, not authorization: each
 machine still controls its own pairing, permissions and revocation.
+
+Connections are saved separately on each client. If Mac A adds Mac B, Mac B
+does not automatically add Mac A. On Mac B, choose Mac A from the directory and
+enter a pairing code issued by Mac A, or paste Mac A's complete relay pairing
+link into **Add environment**.
 
 ## Connect an outside agent with MCP
 
