@@ -159,9 +159,11 @@ clients and older versions.
 
 ## Connect an outside agent with MCP
 
-On an environment configured with the built-in self-hosted relay, open its
-**Self-hosted relay** settings and choose **Create token**. On web and desktop,
-the **Use in another app** command offers the same flow. Choose the agent's
+On web and desktop, open **Sharing & access → Authorized clients → Use in
+another app (MCP)**, or use the **Use in another app** command. Choose
+**Self-hosted relay** and create a token. If T3 Connect is also available, you
+can choose it in the same dialog to use its original setup flow. On mobile,
+use **MCP token** in the environment's self-hosted relay settings. Choose the agent's
 access level, then copy the URL and token. Keep the token privately; it is
 shown once and expires after 30 days. Revoke it in **Authorized clients** on
 that environment. Creating a replacement does not revoke older tokens.

@@ -61,6 +61,7 @@ import { useAccessEnvironment } from "../settings/useAccessEnvironment";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { RadioGroup } from "../ui/radio-group";
+import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
@@ -88,25 +89,56 @@ export function UseInAnotherAppDialogHost() {
 function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentId | null }) {
   const { environment, label } = useAccessEnvironment(requested);
   const gt = useGT();
+  const [method, setMethod] = useState<"selfhost" | "connect" | null>(null);
   const canReadRelay = useEnvironmentScope(environment?.environmentId ?? null, AuthRelayReadScope);
   const selfHosted = useEnvironmentQuery(
     environment && canReadRelay
       ? selfHostedRelayStatus({ environmentId: environment.environmentId, input: {} })
       : null,
   );
+  const selfHostedAvailable = selfHosted.data?.enabled === true;
+  const selectedMethod = selfHostedAvailable
+    ? (method ?? (hasCloudPublicConfig() && environment?.relayManaged ? "connect" : "selfhost"))
+    : "connect";
+  const methodChoice =
+    selfHostedAvailable && hasCloudPublicConfig() ? (
+      <ToggleGroup
+        aria-label={gt("Connection method")}
+        value={[selectedMethod]}
+        onValueChange={(values) => {
+          const value = values[0];
+          if (value === "selfhost" || value === "connect") setMethod(value);
+        }}
+      >
+        <Toggle value="selfhost">{gt("Self-hosted relay")}</Toggle>
+        <Toggle value="connect">T3 Connect</Toggle>
+      </ToggleGroup>
+    ) : null;
   const title = `${gt("Use T3 Code in another app (MCP)")} · ${label ?? "T3 Code"}`;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <WizardPopup>
-        {environment !== null && selfHosted.data?.enabled ? (
+        {selfHosted.isPending && selfHosted.data === null ? (
           <>
             <WizardHeader title={title} />
+            <WizardPanel>
+              <Spinner />
+            </WizardPanel>
+          </>
+        ) : environment !== null && selectedMethod === "selfhost" ? (
+          <>
+            <WizardHeader title={title}>{methodChoice}</WizardHeader>
             <WizardPanel>
               <SelfHostedRelayMcpTokenPanel environmentId={environment.environmentId} />
             </WizardPanel>
           </>
         ) : environment !== null && hasCloudPublicConfig() ? (
-          <Wizard key={environment.environmentId} environment={environment} title={title} />
+          <Wizard
+            key={environment.environmentId}
+            environment={environment}
+            title={title}
+            methodChoice={methodChoice}
+          />
         ) : (
           <>
             <WizardHeader title={title} />
@@ -138,9 +170,11 @@ type Choice = McpApp | "other";
 function Wizard({
   environment,
   title,
+  methodChoice,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly title: string;
+  readonly methodChoice: ReactNode;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -164,6 +198,7 @@ function Wizard({
   return (
     <>
       <WizardHeader title={title}>
+        {methodChoice}
         {open ? (
           <WizardSteps
             steps={steps.map((label) => m(label))}

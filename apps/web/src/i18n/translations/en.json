@@ -13073,9 +13073,9 @@
   "93eca6c0c52fc6ea": "Copy URL and token",
   "02b38ff73121821c": "Expires: {date}",
   "b3e6f662fc3e4f2d": "MCP client",
-  "fce4ad679a63ecd9": "Connect an outside agent using a URL and token. Revoke access under Authorized clients.",
   "a793a7a0ac6f2476": "Client label",
   "d951fe94dcf0553f": "Access",
   "f407ee3729a19a99": "Update this client and the remote T3 Code before connecting.",
-  "f2840e3c9c99042a": "Could not connect. Check that both machines are online and running the latest T3 Code."
+  "f2840e3c9c99042a": "Could not connect. Check that both machines are online and running the latest T3 Code.",
+  "c77ff54a4258a813": "Connection method"
 }
