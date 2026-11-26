@@ -39,6 +39,20 @@ It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kir
 
 ## Install
 
+### This unofficial fork
+
+Download this fork's applications from [njzydark/t3code Releases](https://github.com/njzydark/t3code/releases).
+For the standalone CLI on **Linux x64**, use the installer hosted in this repository:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/njzydark/t3code/codex/build/scripts/install.sh | T3CODE_CHANNEL=fork sh
+```
+
+The installer selects the newest published fork release containing a CLI archive,
+verifies its SHA-256 checksum, and installs `t3` into `~/.local/bin`. It needs no Node.js
+or npm. See [fork installation details](./docs/user/install.md#this-unofficial-fork)
+to select a version or change the install location. The upstream commands below install the official build.
+
 ### Desktop app
 
 [Download T3 Code](https://t3.codes/download) for macOS, Windows, or Linux. You can also use a package manager:
