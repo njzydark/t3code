@@ -146,6 +146,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.selfHostedRelayDirectory]: AuthRelayReadScope,
   [WS_METHODS.selfHostedRelayUpdate]: AuthRelayWriteScope,
   [WS_METHODS.selfHostedRelayForget]: AuthRelayWriteScope,
+  [WS_METHODS.selfHostedRelayConnect]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayPair]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayMcpToken]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayPush]: AuthOrchestrationReadScope,

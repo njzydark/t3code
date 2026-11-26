@@ -1,5 +1,6 @@
 import * as DateTime from "effect/DateTime";
 import * as NetAddress from "effect/net/NetAddress";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -39,6 +40,7 @@ const fixture = (policy?: ManagedPolicyDocument) =>
     let failStorage = false;
     const dependencies = Layer.mergeAll(
       NodeServices.layer,
+      NodeCrypto.layer,
       FetchHttpClient.layer,
       Layer.mock(ServerEnvironment.ServerEnvironment)({
         getEnvironmentId: Effect.succeed(EnvironmentId.make("fixture")),

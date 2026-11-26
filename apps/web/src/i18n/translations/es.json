@@ -13064,5 +13064,6 @@
   "fce4ad679a63ecd9": "Conecta un agente externo mediante una URL y un token. Revoca el acceso en Clientes autorizados.",
   "a793a7a0ac6f2476": "Nombre del cliente",
   "d951fe94dcf0553f": "Acceso",
-  "fc73ae0b15389efa": "Vincular"
+  "f407ee3729a19a99": "Actualiza este cliente y el T3 Code remoto antes de conectarte.",
+  "f2840e3c9c99042a": "No se pudo conectar. Comprueba que ambos equipos estén en línea y tengan la última versión de T3 Code."
 }

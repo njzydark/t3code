@@ -134,17 +134,28 @@ command palette and close when you quit the desktop app.
 
 In the desktop app or a web client served by a T3 environment configured with
 the relay, open **Settings → Environments** to discover other online environments
-registered with the same relay token. Clients without a configured host,
-including mobile and the standalone relay web app, need to pair an environment
-through that relay first. Choose a machine and enter a pairing code issued on
-that machine. The directory refreshes while this screen is open; stopped hosts
-are omitted. Discovery shares names and identities, not authorization: each
-machine still controls its own pairing, permissions and revocation.
+registered with the same relay token. Choose **Connect** to add a machine; you
+do not need to generate or enter a pairing code on it. Both hosts and the
+connecting client must run a version supporting this flow.
+
+Mobile and the standalone relay web app need to pair one environment through
+that relay first. Afterward, they can connect to the other discovered machines
+in the same way. Your session on the first environment must allow managing
+access; a restricted session cannot grant permissions it does not hold.
+
+The registration token now defines a trusted group: a host holding it can
+authorize devices on other hosts sharing it. Use separate tokens for machines
+that should not trust one another, and keep registration tokens private.
+Clients receive their own device-bound sessions, not the registration token.
+Revoke a connected client on the target machine under **Authorized clients**.
+Removing a saved connection on one client does not revoke sessions on other
+clients.
 
 Connections are saved separately on each client. If Mac A adds Mac B, Mac B
-does not automatically add Mac A. On Mac B, choose Mac A from the directory and
-enter a pairing code issued by Mac A, or paste Mac A's complete relay pairing
-link into **Add environment**.
+does not automatically add Mac A. On Mac B, choose **Connect** beside Mac A in
+the directory. The directory refreshes while this screen is open; stopped
+hosts are omitted. Manual pairing links remain available for first-time
+clients and older versions.
 
 ## Connect an outside agent with MCP
 

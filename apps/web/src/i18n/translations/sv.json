@@ -13076,5 +13076,6 @@
   "fce4ad679a63ecd9": "Anslut en extern agent med URL och token. Återkalla åtkomsten under Auktoriserade klienter.",
   "a793a7a0ac6f2476": "Klientnamn",
   "d951fe94dcf0553f": "Åtkomst",
-  "fc73ae0b15389efa": "Parkoppla"
+  "f407ee3729a19a99": "Uppdatera den här klienten och fjärrdatorns T3 Code innan du ansluter.",
+  "f2840e3c9c99042a": "Kunde inte ansluta. Kontrollera att båda datorerna är online och kör den senaste versionen av T3 Code."
 }

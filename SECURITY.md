@@ -107,6 +107,13 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 - A full-access agent can do whatever the user can. Prompt injection that stays
   within the agent's mode is the provider's concern; one that lets it act above
   that mode is in scope (see 3).
+- Self-hosted relay registration tokens define trusted host groups. A host holding
+  the same token can authorize a device on another group host. The source RPC
+  requires `access:write` and delegates only scopes the caller holds. The target
+  verifies the group signature and consumes a target-bound DPoP proof before
+  issuing a short-lived, one-use credential bound to that device key. Existing
+  session policy, renewal and revocation remain authoritative. Separate owners
+  must use separate registration tokens; the directory alone grants no session.
 - A compromised relay signing key can mint for linked environments. That is
   the stated trust assumption; device approval is the mitigation.
 - `T3CODE_DEV_AUTH_TOKEN` and dev startup URLs are administrative by design and

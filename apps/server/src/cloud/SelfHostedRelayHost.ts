@@ -1,6 +1,10 @@
 import * as DateTime from "effect/DateTime";
 import {
+  AuthAccessWriteScope,
   AuthStandardClientScopes,
+  SELF_HOSTED_RELAY_CONNECT_PATH,
+  type SelfHostedRelayConnectInput,
+  type SelfHostedRelayConnectResult,
   mcpClientScopes,
   SelfHostedRelayDirectory,
   type SelfHostedRelayMcpTokenInput,
@@ -13,6 +17,17 @@ import {
   type SelfHostedRelayUpdate,
 } from "@t3tools/contracts";
 import { relayPublicBaseUrl, validateRelayAddress } from "@t3tools/relay-transport/protocol";
+import { createNodeRelayClient } from "@t3tools/relay-transport/node";
+import * as Mac from "effect/crypto/Mac";
+import * as Digest from "effect/crypto/Digest";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import { verifyRequestDpopProof } from "../auth/dpop.ts";
+import {
+  SignedGroupGrant,
+  signGroupGrant,
+  verifyGroupGrant,
+  encodeSignedGroupGrant,
+} from "./selfHostedRelayGroupAuth.ts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -49,6 +64,10 @@ type StoredConfig = typeof StoredConfig.Type;
 const encodeStoredConfig = Schema.encodeEffect(StoredConfig);
 const decodeStoredConfig = Schema.decodeEffect(StoredConfig);
 const decodeDirectory = Schema.decodeUnknownEffect(SelfHostedRelayDirectory);
+const decodeGroupCredential = Schema.decodeUnknownSync(
+  Schema.Struct({ credential: Schema.String }),
+);
+const standardScopes: ReadonlySet<AuthEnvironmentScope> = new Set(AuthStandardClientScopes);
 const emptyStatus: SelfHostedRelayStatus = {
   relayUrl: "",
   enabled: false,
@@ -60,6 +79,14 @@ const emptyStatus: SelfHostedRelayStatus = {
 export class SelfHostedRelayHost extends Context.Service<
   SelfHostedRelayHost,
   {
+    readonly connect: (
+      scopes: ReadonlyArray<AuthEnvironmentScope>,
+      input: SelfHostedRelayConnectInput,
+    ) => Effect.Effect<SelfHostedRelayConnectResult, SelfHostedRelayOperationError>;
+    readonly authorize: (
+      request: HttpServerRequest.HttpServerRequest,
+      grant: SignedGroupGrant,
+    ) => Effect.Effect<{ readonly credential: string }, SelfHostedRelayOperationError>;
     readonly changes: Stream.Stream<SelfHostedRelayStatus>;
     readonly directory: Stream.Stream<SelfHostedRelayDirectory>;
     readonly mcpToken: (
@@ -78,6 +105,8 @@ export class SelfHostedRelayHost extends Context.Service<
 >()("t3/cloud/SelfHostedRelayHost") {}
 
 const make = Effect.gen(function* () {
+  const mac = yield* Mac.Mac;
+  const digest = yield* Digest.Digest;
   const relay = yield* SelfHostedRelay.SelfHostedRelay;
   const http = yield* HttpClient.HttpClient;
   const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -271,6 +300,86 @@ const make = Effect.gen(function* () {
       relayUrl: config.relayUrl,
     });
   }).pipe(Effect.orElseSucceed(() => ({ relayUrl: saved?.relayUrl ?? "", environments: [] })));
+  const connect = Effect.fn("SelfHostedRelayHost.connect")(function* (
+    scopes: ReadonlyArray<AuthEnvironmentScope>,
+    input: SelfHostedRelayConnectInput,
+  ) {
+    const config = saved;
+    if (!config?.enabled || !allowsRemoteClients(policy))
+      return yield* new SelfHostedRelayOperationError({ operation: "unavailable" });
+    if (!scopes.includes(AuthAccessWriteScope))
+      return yield* new SelfHostedRelayOperationError({ operation: "permissions" });
+    const delegated = AuthStandardClientScopes.filter((permission) => scopes.includes(permission));
+    const directory = yield* readDirectory;
+    const target = directory.environments.find(
+      (entry) => entry.environmentId === input.environmentId,
+    );
+    if (!target || directory.relayUrl !== config.relayUrl)
+      return yield* new SelfHostedRelayOperationError({ operation: "unavailable" });
+    const grant = yield* signGroupGrant(config.registrationToken, {
+      environmentId: target.environmentId,
+      scopes: delegated,
+      proof: input.proof,
+    }).pipe(Effect.provideService(Mac.Mac, mac));
+    const credential = yield* Effect.acquireUseRelease(
+      Effect.sync(createNodeRelayClient),
+      (client) =>
+        Effect.tryPromise({
+          try: async (signal) => {
+            const endpoint = client.register({ ...target, relayUrl: config.relayUrl });
+            const response = await client.fetch(
+              endpoint.httpBaseUrl + SELF_HOSTED_RELAY_CONNECT_PATH,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: encodeSignedGroupGrant(grant),
+                signal,
+              },
+            );
+            if (response.status !== 200) {
+              await response.body?.cancel();
+              throw new Error("Group authorization refused.");
+            }
+            return decodeGroupCredential(await response.json()).credential;
+          },
+          catch: () => new SelfHostedRelayOperationError({ operation: "pairing" }),
+        }).pipe(
+          Effect.timeout("15 seconds"),
+          Effect.mapError(() => new SelfHostedRelayOperationError({ operation: "pairing" })),
+        ),
+      (client) => Effect.sync(() => client.dispose()),
+    );
+    return { environment: target, relayUrl: config.relayUrl, credential };
+  });
+
+  const authorize = Effect.fn("SelfHostedRelayHost.authorize")(
+    function* (request: HttpServerRequest.HttpServerRequest, signed: SignedGroupGrant) {
+      const config = saved;
+      if (!config?.enabled)
+        return yield* new SelfHostedRelayOperationError({ operation: "unavailable" });
+      const grant = yield* verifyGroupGrant(config.registrationToken, signed);
+      if (
+        grant.environmentId !== (yield* environment.getEnvironmentId) ||
+        new Set(grant.scopes).size !== grant.scopes.length ||
+        !grant.scopes.every((permission) => standardScopes.has(permission))
+      )
+        return yield* new SelfHostedRelayOperationError({ operation: "permissions" });
+      // Consuming the client's proof persists replay protection across host restarts.
+      const thumbprint = yield* verifyRequestDpopProof({ request, proof: grant.proof });
+      const issued = yield* auth.createPairingLink({
+        scopes: grant.scopes,
+        subject: "self-hosted-relay-group",
+        label: "Self-hosted relay",
+        ttl: Duration.minutes(2),
+        proofKeyThumbprint: thumbprint,
+      });
+      return { credential: issued.credential };
+    },
+    Effect.provideService(Mac.Mac, mac),
+    Effect.provideService(Digest.Digest, digest),
+    Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+    Effect.mapError(() => new SelfHostedRelayOperationError({ operation: "pairing" })),
+  );
   const directory = Stream.fromEffectSchedule(readDirectory, Schedule.spaced("30 seconds"));
 
   yield* secrets.get(CONFIG_SECRET).pipe(
@@ -294,6 +403,8 @@ const make = Effect.gen(function* () {
   );
   return SelfHostedRelayHost.of({
     directory,
+    connect,
+    authorize,
     mcpToken,
     changes: SubscriptionRef.changes(state),
     update,

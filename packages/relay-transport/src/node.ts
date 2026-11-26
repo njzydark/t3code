@@ -4,7 +4,12 @@ import * as NodeHttp from "node:http";
 import { WebSocket } from "ws";
 
 import { AsyncQueue, RelayChannel, type RelayStream } from "./channel.ts";
-import { decodeHeaders, readSocketMessages, writeSocketMessage } from "./client.ts";
+import {
+  EncryptedRelayClient,
+  decodeHeaders,
+  readSocketMessages,
+  writeSocketMessage,
+} from "./client.ts";
 import {
   FrameKind,
   isRecord,
@@ -15,6 +20,10 @@ import {
   type RelayAddress,
 } from "./protocol.ts";
 import { openSocket, secureSocket, type RelaySocketFactory } from "./secure.ts";
+
+export function createNodeRelayClient() {
+  return new EncryptedRelayClient(nodeSocket);
+}
 
 const nodeSocket: RelaySocketFactory = (url) => {
   const socket = new WebSocket(url, {
