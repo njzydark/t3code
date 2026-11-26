@@ -369,7 +369,6 @@ const make = Effect.gen(function* () {
       const issued = yield* auth.createPairingLink({
         scopes: grant.scopes,
         subject: "self-hosted-relay-group",
-        label: "Self-hosted relay",
         ttl: Duration.minutes(2),
         proofKeyThumbprint: thumbprint,
       });

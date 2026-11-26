@@ -151,6 +151,11 @@ Revoke a connected client on the target machine under **Authorized clients**.
 Removing a saved connection on one client does not revoke sessions on other
 clients.
 
+New automatic desktop connections use the connecting machine's local environment
+name in **Authorized clients**. Earlier sessions keep their saved names. A loopback
+IP such as `127.0.0.1` identifies the relay connector on the target machine; use the
+client's name and device information to distinguish remote devices.
+
 Connections are saved separately on each client. If Mac A adds Mac B, Mac B
 does not automatically add Mac A. On Mac B, choose **Connect** beside Mac A in
 the directory. The directory refreshes while this screen is open; stopped

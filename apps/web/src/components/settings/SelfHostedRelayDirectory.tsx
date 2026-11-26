@@ -10,9 +10,7 @@ import { Button } from "../ui/button";
 function DiscoveredEnvironment({ candidate }: { readonly candidate: SelfHostedRelayCandidate }) {
   const gt = useGT();
   const connect = useAtomCommand(selfHostedRelayClients.connect, { reportFailure: false });
-  const allowed = useAtomValue(
-    selfHostedRelayClients.connect.permissionAtom(candidate.viaEnvironmentId),
-  );
+  const allowed = useAtomValue(selfHostedRelayClients.connect.permissionAtom(candidate));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   return (

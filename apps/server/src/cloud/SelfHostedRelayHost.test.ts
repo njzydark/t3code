@@ -7,6 +7,7 @@ import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthStandardClientScopes,
+  SELF_HOSTED_RELAY_CONNECT_PATH,
   type ManagedPolicyDocument,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,10 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { HttpServer, FetchHttpClient } from "effect/http";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import { layerEnvironmentAuth } from "../peer/PeerLinks.testkit.ts";
+import { makeDpopKey } from "../auth/dpop.testkit.ts";
+import { signGroupGrant } from "./selfHostedRelayGroupAuth.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { EnvironmentId } from "@t3tools/contracts";
 
@@ -27,7 +32,13 @@ import * as SelfHostedRelayHost from "./SelfHostedRelayHost.ts";
 
 const token = "test-registration-secret-".repeat(2);
 const url = "https://relay.example.com";
-const fixture = (policy?: ManagedPolicyDocument) =>
+const fixture = (
+  policy?: ManagedPolicyDocument,
+  services?: {
+    readonly auth: EnvironmentAuth.EnvironmentAuth["Service"];
+    readonly secrets: ServerSecretStore.ServerSecretStore["Service"];
+  },
+) =>
   Effect.gen(function* () {
     const stored = new Map<string, Uint8Array>();
     const started =
@@ -49,50 +60,54 @@ const fixture = (policy?: ManagedPolicyDocument) =>
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-relay-settings-" }).pipe(
         Layer.provide(NodeServices.layer),
       ),
-      Layer.mock(ServerSecretStore.ServerSecretStore)({
-        get: (name) => Effect.sync(() => Option.fromUndefinedOr(stored.get(name))),
-        set: (name, bytes) =>
-          Effect.suspend(() =>
-            failStorage
-              ? Effect.fail(
-                  new ServerSecretStore.SecretStorePersistError({
-                    resource: "test",
-                    cause: new Error("private"),
-                  }),
-                )
-              : Effect.sync(() => {
-                  stored.set(name, bytes);
-                }),
-          ),
-        remove: (name) =>
-          Effect.sync(() => {
-            stored.delete(name);
+      services
+        ? Layer.succeed(ServerSecretStore.ServerSecretStore, services.secrets)
+        : Layer.mock(ServerSecretStore.ServerSecretStore)({
+            get: (name) => Effect.sync(() => Option.fromUndefinedOr(stored.get(name))),
+            set: (name, bytes) =>
+              Effect.suspend(() =>
+                failStorage
+                  ? Effect.fail(
+                      new ServerSecretStore.SecretStorePersistError({
+                        resource: "test",
+                        cause: new Error("private"),
+                      }),
+                    )
+                  : Effect.sync(() => {
+                      stored.set(name, bytes);
+                    }),
+              ),
+            remove: (name) =>
+              Effect.sync(() => {
+                stored.delete(name);
+              }),
           }),
-      }),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("0.0.0.0", 4321),
       }),
-      Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-        createPairingLink: (input) =>
-          Queue.offer(issued, input).pipe(
-            Effect.as({
-              id: "pairing-id",
-              credential: "one-time",
-              ...(input?.label ? { label: input.label } : {}),
-              scopes: input?.scopes ?? [],
-              subject: "one-time-token",
-              createdAt: DateTime.makeUnsafe(0),
-              expiresAt: DateTime.makeUnsafe(600_000),
-            }),
-          ),
-        revokePairingLink: () => Effect.succeed(true),
-        issueMcpClientSession: () =>
-          Effect.succeed({
-            sessionId: "mcp-session" as import("@t3tools/contracts").AuthSessionId,
-            token: "fixture-mcp-token",
-            expiresAt: DateTime.makeUnsafe(30 * 86400_000),
+      services
+        ? Layer.succeed(EnvironmentAuth.EnvironmentAuth, services.auth)
+        : Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+            createPairingLink: (input) =>
+              Queue.offer(issued, input).pipe(
+                Effect.as({
+                  id: "pairing-id",
+                  credential: "one-time",
+                  ...(input?.label ? { label: input.label } : {}),
+                  scopes: input?.scopes ?? [],
+                  subject: "one-time-token",
+                  createdAt: DateTime.makeUnsafe(0),
+                  expiresAt: DateTime.makeUnsafe(600_000),
+                }),
+              ),
+            revokePairingLink: () => Effect.succeed(true),
+            issueMcpClientSession: () =>
+              Effect.succeed({
+                sessionId: "mcp-session" as import("@t3tools/contracts").AuthSessionId,
+                token: "fixture-mcp-token",
+                expiresAt: DateTime.makeUnsafe(30 * 86400_000),
+              }),
           }),
-      }),
       Layer.succeed(SelfHostedRelay.SelfHostedRelay, {
         run: (input) =>
           Effect.gen(function* () {
@@ -121,6 +136,52 @@ const fixture = (policy?: ManagedPolicyDocument) =>
   });
 
 describe("self-hosted relay host settings", () => {
+  it.effect("names an automatically authorized session from the exchanging client", () =>
+    Effect.gen(function* () {
+      const context = yield* Layer.build(layerEnvironmentAuth("t3-relay-client-name-"));
+      const auth = yield* EnvironmentAuth.EnvironmentAuth.pipe(Effect.provideContext(context));
+      const secrets = yield* ServerSecretStore.ServerSecretStore.pipe(
+        Effect.provideContext(context),
+      );
+      const f = yield* fixture(undefined, { auth, secrets });
+      yield* Effect.gen(function* () {
+        const host = yield* SelfHostedRelayHost.SelfHostedRelayHost;
+        yield* host.update({ relayUrl: url, registrationToken: token, enabled: true });
+        yield* Queue.take(f.started);
+        const key = makeDpopKey();
+        const requestUrl = `https://target.example${SELF_HOSTED_RELAY_CONNECT_PATH}`;
+        const grant = yield* signGroupGrant(token, {
+          environmentId: EnvironmentId.make("fixture"),
+          scopes: [AuthAccessReadScope],
+          proof: key.sign({
+            method: "POST",
+            url: requestUrl,
+            token: "",
+            iat: Math.floor((yield* DateTime.now).epochMilliseconds / 1000),
+          }),
+        });
+        const request = HttpServerRequest.fromWeb(
+          new Request(requestUrl, { method: "POST", headers: { host: "target.example" } }),
+        );
+        const issued = yield* host.authorize(request, grant);
+        yield* auth.exchangeBootstrapCredentialForAccessToken(
+          issued.credential,
+          undefined,
+          { label: "Connecting MacBook", deviceType: "desktop", os: "macOS" },
+          { proofKeyThumbprint: key.thumbprint },
+        );
+        expect(yield* auth.listSessions()).toMatchObject([
+          {
+            subject: "self-hosted-relay-group",
+            scopes: [AuthAccessReadScope],
+            client: { label: "Connecting MacBook", deviceType: "desktop", os: "macOS" },
+          },
+        ]);
+        expect((yield* host.authorize(request, grant).pipe(Effect.flip)).operation).toBe("pairing");
+      }).pipe(Effect.provide(f.layer));
+    }).pipe(Effect.scoped, Effect.provide(NodeCrypto.layer)),
+  );
+
   it.effect("issues revocable MCP credentials only within the caller's grants", () =>
     Effect.gen(function* () {
       const f = yield* fixture();
