@@ -4,6 +4,7 @@ import {
   type AuthClientMetadata,
   type AuthConnectDevice,
   type AuthEnvironmentScope,
+  type AuthSessionAuthorizationSource,
   type AuthMcpClientAccess,
   type AuthPairingLink,
   mcpApprovalCode,
@@ -33,11 +34,13 @@ import * as Stream from "effect/Stream";
 import * as ServerConfig from "../config.ts";
 import * as AuthConnectDevices from "../persistence/AuthConnectDevices.ts";
 import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
+import { relayRequestVerificationCode } from "./utils.ts";
 
 export interface BootstrapGrant {
   readonly method: ServerAuthBootstrapMethod;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
+  readonly authorizationSource?: AuthSessionAuthorizationSource;
   readonly label?: string;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt: DateTime.DateTime;
@@ -251,12 +254,13 @@ export class PairingGrantStore extends Context.Service<
       readonly ttl?: Duration.Duration;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly subject?: string;
+      readonly authorizationSource?: AuthSessionAuthorizationSource;
       readonly label?: string;
       readonly proofKeyThumbprint?: string;
       readonly purpose?: "startup";
       /** Issues a hidden `<LEVEL>-` code that only an agent sign-in at this level can spend. */
       readonly mcpApproval?: AuthMcpClientAccess;
-      /** Spendable only after someone trusts `proofKeyThumbprint` as a T3 Connect device. */
+      /** Ordinary links require approval of this request; T3 Connect requires device trust. */
       readonly requiresConnectApproval?: boolean;
     }) => Effect.Effect<IssuedBootstrapCredential, BootstrapCredentialInternalError>;
     /** A device's open or denied request, reused so retries keep one request and one code. */
@@ -268,7 +272,7 @@ export class PairingGrantStore extends Context.Service<
       pairingLinkId: string,
       client: AuthClientMetadata,
     ) => Effect.Effect<void, BootstrapCredentialInternalError>;
-    /** Trusts the device key behind a waiting request. False when it is gone or not a request. */
+    /** Approves a waiting request, trusting the device key only for T3 Connect. */
     readonly approveConnectRequest: (
       pairingLinkId: string,
     ) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
@@ -295,6 +299,10 @@ export class PairingGrantStore extends Context.Service<
     >;
     readonly streamChanges: Stream.Stream<BootstrapCredentialChange>;
     readonly revoke: (id: string) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
+    readonly cancelPendingPairing: (
+      credential: string,
+      proofKeyThumbprint: string,
+    ) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
     readonly consume: (
       credential: string,
       input?: {
@@ -335,7 +343,13 @@ const toPairingLink = (row: AuthPairingLinks.AuthPairingLinkRecord): AuthPairing
   ...(row.requiresConnectApproval === 1 && row.proofKeyThumbprint
     ? {
         connectDeviceRequest: {
-          verificationCode: connectDeviceVerificationCode(row.proofKeyThumbprint),
+          ...(row.authorizationSource === "relay-approved"
+            ? { source: "self-hosted-relay" as const }
+            : {}),
+          verificationCode:
+            row.authorizationSource === "relay-approved"
+              ? relayRequestVerificationCode(row.id, row.proofKeyThumbprint)
+              : connectDeviceVerificationCode(row.proofKeyThumbprint),
           ...(row.requestedClient ? { client: row.requestedClient } : {}),
         },
       }
@@ -485,6 +499,8 @@ const make = Effect.gen(function* () {
     const subject = mcpApproval
       ? `${AuthPairingLinks.MCP_APPROVAL_SUBJECT_PREFIX}${mcpApproval}`
       : (input?.subject ?? "one-time-token");
+    const authorizationSource =
+      input?.authorizationSource ?? (subject === "one-time-token" ? "pairing-link" : undefined);
     yield* pairingLinks
       .create({
         id,
@@ -492,6 +508,7 @@ const make = Effect.gen(function* () {
         method: "one-time-token",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject,
+        ...(authorizationSource ? { authorizationSource } : {}),
         label: input?.label ?? null,
         proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
         ...(input?.requiresConnectApproval ? { requiresConnectApproval: true } : {}),
@@ -521,7 +538,13 @@ const make = Effect.gen(function* () {
         ...(input?.requiresConnectApproval && input.proofKeyThumbprint
           ? {
               connectDeviceRequest: {
-                verificationCode: connectDeviceVerificationCode(input.proofKeyThumbprint),
+                ...(authorizationSource === "relay-approved"
+                  ? { source: "self-hosted-relay" as const }
+                  : {}),
+                verificationCode:
+                  authorizationSource === "relay-approved"
+                    ? relayRequestVerificationCode(id, input.proofKeyThumbprint)
+                    : connectDeviceVerificationCode(input.proofKeyThumbprint),
               },
             }
           : {}),
@@ -617,6 +640,9 @@ const make = Effect.gen(function* () {
                 method: grant.method,
                 scopes: grant.scopes,
                 subject: grant.subject,
+                ...(grant.authorizationSource
+                  ? { authorizationSource: grant.authorizationSource }
+                  : {}),
                 ...(grant.label ? { label: grant.label } : {}),
                 ...(grant.proofKeyThumbprint
                   ? { proofKeyThumbprint: grant.proofKeyThumbprint }
@@ -666,6 +692,9 @@ const make = Effect.gen(function* () {
           method: consumed.value.method,
           scopes: consumed.value.scopes,
           subject: consumed.value.subject,
+          ...(consumed.value.authorizationSource
+            ? { authorizationSource: consumed.value.authorizationSource }
+            : {}),
           ...(consumed.value.label ? { label: consumed.value.label } : {}),
           ...(consumed.value.proofKeyThumbprint
             ? { proofKeyThumbprint: consumed.value.proofKeyThumbprint }
@@ -754,7 +783,9 @@ const make = Effect.gen(function* () {
       const row = yield* pairingLinks
         .getActiveById({ id: pairingLinkId, now })
         .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
-      if (Option.isSome(row)) yield* emitUpsert(toPairingLink(row.value));
+      if (Option.isSome(row) && row.value.connectApproved === 0) {
+        yield* emitUpsert(toPairingLink(row.value));
+      }
     });
 
   const trustConnectDevice: PairingGrantStore["Service"]["trustConnectDevice"] = Effect.fn(
@@ -781,6 +812,14 @@ const make = Effect.gen(function* () {
     ) {
       return false;
     }
+    if (row.value.subject === "one-time-token") {
+      const approved = yield* pairingLinks
+        .approvePending({ id: pairingLinkId, now })
+        .pipe(Effect.mapError((cause) => new ConnectDevicesError({ operation: "trust", cause })));
+      if (approved) yield* emitRemoved(pairingLinkId);
+      return approved;
+    }
+    if (row.value.subject !== "cloud-connect") return false;
     yield* connectDevices
       .trust({
         proofKeyThumbprint: row.value.proofKeyThumbprint,
@@ -855,6 +894,18 @@ const make = Effect.gen(function* () {
       return removed;
     });
 
+  const cancelPendingPairing: PairingGrantStore["Service"]["cancelPendingPairing"] = Effect.fn(
+    "PairingGrantStore.cancelPendingPairing",
+  )(function* (credential, proofKeyThumbprint) {
+    const revokedAt = yield* DateTime.now;
+    const revoked = yield* pairingLinks
+      .cancelPending({ credential, proofKeyThumbprint, revokedAt })
+      .pipe(Effect.mapError((cause) => new ConnectDevicesError({ operation: "revoke", cause })));
+    if (Option.isNone(revoked)) return false;
+    yield* emitRemoved(revoked.value);
+    return true;
+  });
+
   return PairingGrantStore.of({
     issueOneTimeToken,
     findPendingConnect,
@@ -870,6 +921,7 @@ const make = Effect.gen(function* () {
       return Stream.fromPubSub(changesPubSub);
     },
     revoke,
+    cancelPendingPairing,
     consume,
   });
 });

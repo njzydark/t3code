@@ -73,6 +73,25 @@ The same dialog also creates links using an existing direct address. Relay links
 are one-use, expire after ten minutes, and cannot grant permissions beyond your
 current session. Both types share the authorized-client list and revocation controls.
 
+Hosts in the same registration-token group also appear in **Self-hosted relay**
+discovery. Choose **Connect** to request access. New requests require approval on
+the destination host by default: compare the code shown on both devices, then
+approve or deny the request in **Sharing & access**. The requesting device can
+cancel, and unanswered requests expire after ten minutes. On a CLI host, use
+`t3 auth connect-device list` to review the requester, requested scopes, and expiry,
+then `t3 auth connect-device approve XXXX-XXXX` with the displayed code. Each Relay
+request has its own code, even when the same device requests access again.
+
+Each host can enable **Automatically approve new devices** in its relay settings.
+Only enable it when every host sharing the registration token is trusted: a host
+with that token can request access without another confirmation. Turning it off
+requires approval for future requests; it does not revoke existing clients.
+Turning it on leaves existing pending requests waiting for manual approval.
+**Authorized clients** records whether a new session was automatically approved,
+manually approved, or created with a pairing link. That label stays with the
+session through renewals and settings changes. Older ambiguous records have no
+label. Revoke an existing client's access from that list.
+
 In the relay configuration dialog's actions menu, use **Disconnect relay** to
 stop while retaining configuration, or **Remove relay configuration** to remove
 the saved URL and token. Neither action revokes paired clients or changes the

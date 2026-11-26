@@ -424,6 +424,143 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
+    it.effect("issues a renewable scoped Relay session only after its request is approved", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const admin = yield* serverAuth.issueSession({ label: "Owner" });
+        const key = makeDpopKey();
+        const issued = yield* serverAuth.createPairingLink({
+          proofKeyThumbprint: key.thumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+          scopes: ["orchestration:read"],
+        });
+        const exchange = (client = requestMetadata) =>
+          serverAuth.exchangeBootstrapCredentialForAccessToken(
+            issued.credential,
+            ["orchestration:read", "access:write"],
+            client,
+            { proofKeyThumbprint: key.thumbprint },
+          );
+        expect((yield* Effect.flip(exchange()))._tag).toBe("ServerAuthConnectApprovalPendingError");
+        expect(yield* serverAuth.listClientSessions(admin.sessionId)).toHaveLength(1);
+        expect(yield* serverAuth.cancelPendingPairing(issued.credential, "other-key")).toBe(false);
+        expect((yield* Effect.flip(exchange({ ...requestMetadata, os: "changed" })))._tag).toBe(
+          "ServerAuthConnectApprovalPendingError",
+        );
+        const [request] = yield* serverAuth.listPairingLinks();
+        expect(request?.connectDeviceRequest).toEqual({
+          source: "self-hosted-relay",
+          verificationCode: expect.any(String),
+          client: requestMetadata,
+        });
+        const expanded = yield* serverAuth.createPairingLink({
+          proofKeyThumbprint: key.thumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+          scopes: ["orchestration:read", "terminal:operate"],
+        });
+        const expandedRequest = (yield* serverAuth.listPairingLinks()).find(
+          (link) => link.id === expanded.id,
+        );
+        expect(expandedRequest?.connectDeviceRequest?.verificationCode).not.toBe(
+          request?.connectDeviceRequest?.verificationCode,
+        );
+        expect(
+          yield* serverAuth.connectRequestsShowingCode(
+            request!.connectDeviceRequest!.verificationCode,
+          ),
+        ).toEqual([issued.id]);
+        expect(
+          yield* serverAuth.connectRequestsShowingCode(
+            expandedRequest!.connectDeviceRequest!.verificationCode,
+          ),
+        ).toEqual([expanded.id]);
+        // A T3 Connect retry for the same key must get its own device approval request.
+        const connect = yield* serverAuth.issueConnectCredential({
+          proofKeyThumbprint: key.thumbprint,
+          requireApproval: true,
+        });
+        expect(connect.credential).not.toBe(issued.credential);
+        expect(yield* serverAuth.approveConnectDevice(issued.id)).toBe(true);
+        const token = yield* exchange();
+        const session = yield* sessions.verify(token.access_token);
+        expect(session.subject).toBe("one-time-token");
+        expect(session.scopes).toEqual(["orchestration:read"]);
+        const listedRelay = () =>
+          serverAuth
+            .listClientSessions(admin.sessionId)
+            .pipe(
+              Effect.map((clients) =>
+                clients.find((client) => client.sessionId === session.sessionId),
+              ),
+            );
+        expect((yield* listedRelay())?.authorizationSource).toBe("relay-approved");
+        expect(yield* serverAuth.listConnectDevices()).toEqual([]);
+        expect(
+          (yield* Effect.flip(
+            serverAuth.exchangeBootstrapCredentialForAccessToken(
+              connect.credential,
+              undefined,
+              requestMetadata,
+              { proofKeyThumbprint: key.thumbprint },
+            ),
+          ))._tag,
+        ).toBe("ServerAuthConnectApprovalPendingError");
+        yield* TestClock.adjust("30 minutes");
+        const renewed = yield* serverAuth.renewAccessToken(
+          token.access_token,
+          key.thumbprint,
+          Effect.void,
+        );
+        expect((yield* sessions.verify(renewed.access_token)).sessionId).toBe(session.sessionId);
+        expect((yield* listedRelay())?.authorizationSource).toBe("relay-approved");
+
+        const cancelled = yield* serverAuth.createPairingLink({
+          proofKeyThumbprint: key.thumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+        });
+        expect(yield* serverAuth.cancelPendingPairing(cancelled.credential, key.thumbprint)).toBe(
+          true,
+        );
+        expect(
+          (yield* Effect.flip(
+            serverAuth.exchangeBootstrapCredentialForAccessToken(
+              cancelled.credential,
+              undefined,
+              requestMetadata,
+              { proofKeyThumbprint: key.thumbprint },
+            ),
+          ))._tag,
+        ).toBe("ServerAuthInvalidCredentialError");
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
+
+    it.effect("records manual pairing and automatic Relay sources at credential creation", () =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        for (const source of ["pairing-link", "relay-auto"] as const) {
+          const issued = yield* auth.createPairingLink({
+            ...(source === "relay-auto" ? { authorizationSource: source } : {}),
+            scopes: ["orchestration:read"],
+          });
+          const token = yield* auth.exchangeBootstrapCredentialForAccessToken(
+            issued.credential,
+            undefined,
+            requestMetadata,
+          );
+          const session = yield* sessions.verify(token.access_token);
+          expect(
+            (yield* auth.listSessions()).find((row) => row.sessionId === session.sessionId)
+              ?.authorizationSource,
+          ).toBe(source);
+        }
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
+
     it.effect("renews a pairing-link DPoP session in place while its device keeps using it", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

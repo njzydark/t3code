@@ -362,6 +362,7 @@ export type AuthClientMetadata = typeof AuthClientMetadata.Type;
 /** A T3 Connect device waiting for someone on this environment to approve it. */
 export const AuthConnectDeviceRequest = Schema.Struct({
   verificationCode: TrimmedNonEmptyString,
+  source: Schema.optionalKey(Schema.Literal("self-hosted-relay")),
   /** What the device said about itself when it first asked. Absent until it does. */
   client: Schema.optionalKey(AuthClientMetadata),
 });
@@ -388,8 +389,16 @@ export const AuthConnectDevice = Schema.Struct({
 });
 export type AuthConnectDevice = typeof AuthConnectDevice.Type;
 
+export const AuthSessionAuthorizationSource = Schema.Literals([
+  "relay-auto",
+  "relay-approved",
+  "pairing-link",
+]);
+export type AuthSessionAuthorizationSource = typeof AuthSessionAuthorizationSource.Type;
+
 export const AuthClientSession = Schema.Struct({
   sessionId: AuthSessionId,
+  authorizationSource: Schema.optionalKey(AuthSessionAuthorizationSource),
   subject: TrimmedNonEmptyString,
   ...authScopeResponseFields,
   method: ServerAuthSessionMethod,

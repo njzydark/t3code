@@ -19,23 +19,24 @@ import { useEnvironments } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { useEnvironmentScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
+import { connectDeviceApprovalRequests } from "./ConnectDeviceApprovalCoordinator.logic";
 import { describeConnectDeviceClient } from "./settings/ConnectionsSettings.logic";
 import { toastManager } from "./ui/toast";
 import { stackedThreadToast } from "./ui/toastHelpers";
 
 /**
- * Asks whoever can approve to look at T3 Connect devices waiting on an environment, and tells
+ * Asks whoever can approve to look at devices waiting on an environment, and tells
  * them about devices that got in without approval.
  */
 export function ConnectDeviceApprovalCoordinator() {
   const { environments } = useEnvironments();
   return environments.map((environment) =>
-    environment.connection.phase === "connected" && environment.serverConfig ? (
+    environment.connection.phase === "connected" ? (
       <EnvironmentConnectDevices
         key={environment.environmentId}
         environmentId={environment.environmentId}
         environmentLabel={environment.label}
-        approvalRequired={environment.serverConfig.settings.requireConnectDeviceApproval}
+        approvalRequired={environment.serverConfig?.settings.requireConnectDeviceApproval !== false}
       />
     ) : null,
   );
@@ -53,7 +54,7 @@ function EnvironmentConnectDevices({
   if (!canApprove) return null;
   return (
     <>
-      {approvalRequired ? <ConnectDeviceRequestToasts {...props} /> : null}
+      <ConnectDeviceRequestToasts {...props} />
       <NewConnectDeviceToast {...props} announce={!approvalRequired} />
     </>
   );
@@ -204,21 +205,14 @@ function ConnectDeviceRequestToasts({
     setRetryGeneration((generation) => generation + 1);
   };
 
-  const requests =
-    access.data?.type === "snapshot"
-      ? access.data.payload.pairingLinks.flatMap((link) =>
-          link.connectDeviceRequest
-            ? [{ id: link.id, request: link.connectDeviceRequest, expiresAt: link.expiresAt }]
-            : [],
-        )
-      : null;
+  const requests = access.data?.type === "snapshot" ? access.data.payload.pairingLinks : null;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens, updates and closes imperative toastManager toasts to match the pending requests
   useEffect(() => {
     if (requests === null) return;
     // The server publishes no event when a request expires, so the toast ends itself then.
     const now = Date.now();
-    const live = requests.flatMap((entry) => {
+    const live = connectDeviceApprovalRequests(requests).flatMap((entry) => {
       const remainingMs = DateTime.toEpochMillis(entry.expiresAt) - now;
       return remainingMs > 0 ? [{ ...entry, remainingMs }] : [];
     });
@@ -228,9 +222,8 @@ function ConnectDeviceRequestToasts({
       toastManager.close(tracked.toastId);
       toasts.current.delete(id);
     }
-    for (const { id, request, remainingMs } of live) {
-      const device = describeConnectDeviceClient(request);
-      const renderedKey = `${request.verificationCode}:${device}`;
+    for (const { id, description, remainingMs } of live) {
+      const renderedKey = description;
       const tracked = toasts.current.get(id);
       if (tracked?.renderedKey === renderedKey) continue;
       const close = () => {
@@ -240,12 +233,7 @@ function ConnectDeviceRequestToasts({
       const options = stackedThreadToast({
         type: "info",
         title: m(msg("A device wants to connect to {environmentLabel}", { environmentLabel })),
-        description: m(
-          msg("{device}. Approve only if it shows code {code}.", {
-            device,
-            code: request.verificationCode,
-          }),
-        ),
+        description,
         timeout: remainingMs,
         actionProps: {
           children: m(msg("Approve")),

@@ -7,7 +7,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { AuthClientMetadata, AuthEnvironmentScopes } from "@t3tools/contracts";
+import {
+  AuthClientMetadata,
+  AuthEnvironmentScopes,
+  AuthSessionAuthorizationSource,
+} from "@t3tools/contracts";
 
 import {
   type AuthPairingLinkRepositoryError,
@@ -31,13 +35,14 @@ export const AuthPairingLinkRecord = Schema.Struct({
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
   scopes: Schema.fromJsonString(AuthEnvironmentScopes),
   subject: Schema.String,
+  authorizationSource: Schema.NullOr(AuthSessionAuthorizationSource),
   label: Schema.NullOr(Schema.String),
   proofKeyThumbprint: Schema.NullOr(Schema.String),
   createdAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
   consumedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
-  /** Spendable only once `proofKeyThumbprint` is a trusted T3 Connect device. */
+  /** Requires approval of this request, or device trust for T3 Connect. */
   requiresConnectApproval: SqliteFlag,
   connectApproved: SqliteFlag,
   requestedClient: Schema.NullOr(Schema.fromJsonString(AuthClientMetadata)),
@@ -50,6 +55,7 @@ export const CreateAuthPairingLinkInput = Schema.Struct({
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
   scopes: AuthEnvironmentScopes,
   subject: Schema.String,
+  authorizationSource: Schema.optionalKey(AuthSessionAuthorizationSource),
   label: Schema.NullOr(Schema.String),
   proofKeyThumbprint: Schema.NullOr(Schema.String),
   requiresConnectApproval: Schema.optionalKey(Schema.Boolean),
@@ -92,6 +98,13 @@ export const GetActiveAuthPairingLinkByIdInput = Schema.Struct({
 });
 export type GetActiveAuthPairingLinkByIdInput = typeof GetActiveAuthPairingLinkByIdInput.Type;
 
+export const CancelPendingAuthPairingLinkInput = Schema.Struct({
+  credential: Schema.String,
+  proofKeyThumbprint: Schema.String,
+  revokedAt: Schema.DateTimeUtcFromString,
+});
+export type CancelPendingAuthPairingLinkInput = typeof CancelPendingAuthPairingLinkInput.Type;
+
 export const FindPendingConnectPairingLinkInput = Schema.Struct({
   proofKeyThumbprint: Schema.String,
   now: Schema.DateTimeUtcFromString,
@@ -122,6 +135,7 @@ const AuthPairingLinkRawDbRow = Schema.Struct({
   method: Schema.Unknown,
   scopes: Schema.Unknown,
   subject: Schema.Unknown,
+  authorizationSource: Schema.Unknown,
   label: Schema.Unknown,
   proofKeyThumbprint: Schema.Unknown,
   createdAt: Schema.Unknown,
@@ -150,6 +164,12 @@ export class AuthPairingLinkRepository extends Context.Service<
     readonly revoke: (
       input: RevokeAuthPairingLinkInput,
     ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
+    readonly approvePending: (
+      input: GetActiveAuthPairingLinkByIdInput,
+    ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
+    readonly cancelPending: (
+      input: CancelPendingAuthPairingLinkInput,
+    ) => Effect.Effect<Option.Option<string>, AuthPairingLinkRepositoryError>;
     readonly getByCredential: (
       input: GetAuthPairingLinkByCredentialInput,
     ) => Effect.Effect<Option.Option<AuthPairingLinkRecord>, AuthPairingLinkRepositoryError>;
@@ -189,6 +209,17 @@ function toPersistenceSqlOrDecodeError(
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
+  const connectApproved = sql`
+    CASE
+      WHEN subject = 'one-time-token' AND authorization_source = 'relay-approved' THEN approved_at IS NOT NULL
+      WHEN subject = 'cloud-connect' THEN EXISTS (
+        SELECT 1 FROM auth_connect_devices
+        WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
+      )
+      ELSE 0
+    END
+  `;
+
   const createPairingLinkRow = SqlSchema.void({
     Request: CreateAuthPairingLinkInput,
     execute: (input) =>
@@ -199,6 +230,7 @@ export const make = Effect.gen(function* () {
           method,
           scopes,
           subject,
+          authorization_source,
           label,
           proof_key_thumbprint,
           requires_connect_approval,
@@ -213,6 +245,7 @@ export const make = Effect.gen(function* () {
           ${input.method},
           ${JSON.stringify(input.scopes)},
           ${input.subject},
+          ${input.authorizationSource ?? null},
           ${input.label},
           ${input.proofKeyThumbprint},
           ${input.requiresConnectApproval ? 1 : 0},
@@ -253,7 +286,10 @@ export const make = Effect.gen(function* () {
           )
           AND (
             requires_connect_approval = 0
-            OR proof_key_thumbprint IN (SELECT proof_key_thumbprint FROM auth_connect_devices)
+            OR (subject = 'one-time-token' AND authorization_source = 'relay-approved' AND approved_at IS NOT NULL)
+            OR (subject = 'cloud-connect' AND proof_key_thumbprint IN (
+              SELECT proof_key_thumbprint FROM auth_connect_devices
+            ))
           )
           AND (${requestedScopes === undefined ? 1 : 0} OR EXISTS (
             SELECT 1
@@ -275,6 +311,7 @@ export const make = Effect.gen(function* () {
           method AS "method",
           scopes AS "scopes",
           subject AS "subject",
+          authorization_source AS "authorizationSource",
           label AS "label",
           proof_key_thumbprint AS "proofKeyThumbprint",
           created_at AS "createdAt",
@@ -282,10 +319,7 @@ export const make = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt",
           requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
+          ${connectApproved} AS "connectApproved",
           requested_client_json AS "requestedClient"
       `,
   });
@@ -301,6 +335,7 @@ export const make = Effect.gen(function* () {
           method AS "method",
           scopes AS "scopes",
           subject AS "subject",
+          authorization_source AS "authorizationSource",
           label AS "label",
           proof_key_thumbprint AS "proofKeyThumbprint",
           created_at AS "createdAt",
@@ -308,10 +343,7 @@ export const make = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt",
           requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
+          ${connectApproved} AS "connectApproved",
           requested_client_json AS "requestedClient"
         FROM auth_pairing_links
         WHERE revoked_at IS NULL
@@ -336,11 +368,78 @@ export const make = Effect.gen(function* () {
           -- An approved request is answered; denying it now would leave the device trusted.
           AND NOT (
             requires_connect_approval = 1
+            AND subject = 'cloud-connect'
             AND proof_key_thumbprint IN (SELECT proof_key_thumbprint FROM auth_connect_devices)
           )
         RETURNING id AS "id"
       `,
   });
+
+  const approvePendingRow = SqlSchema.findAll({
+    Request: GetActiveAuthPairingLinkByIdInput,
+    Result: Schema.Struct({ id: Schema.String }),
+    execute: ({ id, now }) => sql`
+      UPDATE auth_pairing_links
+      SET approved_at = ${now}
+      WHERE id = ${id}
+        AND subject = 'one-time-token'
+        AND authorization_source = 'relay-approved'
+        AND method = 'one-time-token'
+        AND proof_key_thumbprint IS NOT NULL
+        AND requires_connect_approval = 1
+        AND approved_at IS NULL
+        AND revoked_at IS NULL
+        AND consumed_at IS NULL
+        AND expires_at > ${now}
+      RETURNING id
+    `,
+  });
+
+  const cancelPendingRow = SqlSchema.findOneOption({
+    Request: CancelPendingAuthPairingLinkInput,
+    Result: Schema.Struct({ id: Schema.String }),
+    execute: ({ credential, proofKeyThumbprint, revokedAt }) => sql`
+      UPDATE auth_pairing_links
+      SET revoked_at = ${revokedAt}
+      WHERE credential = ${credential}
+        AND proof_key_thumbprint = ${proofKeyThumbprint}
+        AND subject = 'one-time-token'
+        AND authorization_source = 'relay-approved'
+        AND method = 'one-time-token'
+        AND requires_connect_approval = 1
+        AND revoked_at IS NULL
+        AND consumed_at IS NULL
+        AND expires_at > ${revokedAt}
+      RETURNING id
+    `,
+  });
+
+  const approvePending = Effect.fn("AuthPairingLinkRepository.approvePending")(
+    (input: GetActiveAuthPairingLinkByIdInput) =>
+      approvePendingRow(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthPairingLinkRepository.approvePending:query",
+            "AuthPairingLinkRepository.approvePending:decodeRows",
+            { pairingLinkId: input.id },
+          ),
+        ),
+        Effect.map((rows) => rows.length > 0),
+      ),
+  );
+
+  const cancelPending = Effect.fn("AuthPairingLinkRepository.cancelPending")(
+    (input: CancelPendingAuthPairingLinkInput) =>
+      cancelPendingRow(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthPairingLinkRepository.cancelPending:query",
+            "AuthPairingLinkRepository.cancelPending:decodeRow",
+          ),
+        ),
+        Effect.map(Option.map((row) => row.id)),
+      ),
+  );
 
   const getPairingLinkRowByCredential = SqlSchema.findOneOption({
     Request: GetAuthPairingLinkByCredentialInput,
@@ -353,6 +452,7 @@ export const make = Effect.gen(function* () {
           method AS "method",
           scopes AS "scopes",
           subject AS "subject",
+          authorization_source AS "authorizationSource",
           label AS "label",
           proof_key_thumbprint AS "proofKeyThumbprint",
           created_at AS "createdAt",
@@ -360,10 +460,7 @@ export const make = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt",
           requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
+          ${connectApproved} AS "connectApproved",
           requested_client_json AS "requestedClient"
         FROM auth_pairing_links
         WHERE credential = ${credential}
@@ -377,6 +474,7 @@ export const make = Effect.gen(function* () {
       method AS "method",
       scopes AS "scopes",
       subject AS "subject",
+          authorization_source AS "authorizationSource",
       label AS "label",
       proof_key_thumbprint AS "proofKeyThumbprint",
       created_at AS "createdAt",
@@ -384,10 +482,7 @@ export const make = Effect.gen(function* () {
       consumed_at AS "consumedAt",
       revoked_at AS "revokedAt",
       requires_connect_approval AS "requiresConnectApproval",
-      EXISTS (
-        SELECT 1 FROM auth_connect_devices
-        WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-      ) AS "connectApproved",
+      ${connectApproved} AS "connectApproved",
       requested_client_json AS "requestedClient"
     FROM auth_pairing_links
   `;
@@ -412,6 +507,7 @@ export const make = Effect.gen(function* () {
       sql`
         ${selectRow}
         WHERE proof_key_thumbprint = ${proofKeyThumbprint}
+          AND subject = 'cloud-connect'
           AND requires_connect_approval = 1
           -- A denied request stays the device's answer until it expires, so retries get a
           -- dead credential back instead of prompting the approver again.
@@ -493,7 +589,6 @@ export const make = Effect.gen(function* () {
     Result: Schema.Struct({ id: Schema.String }),
     execute: ({ proofKeyThumbprint, keepProofKeyThumbprint, includeUnbound, revokedAt }) =>
       sql`
-        -- Only T3 Connect mints bind a proof key, so bound links are that key's connect credentials.
         UPDATE auth_pairing_links
         SET revoked_at = ${revokedAt}
         WHERE revoked_at IS NULL
@@ -626,6 +721,8 @@ export const make = Effect.gen(function* () {
   return {
     create,
     consumeAvailable,
+    approvePending,
+    cancelPending,
     listActive,
     revoke,
     getByCredential,

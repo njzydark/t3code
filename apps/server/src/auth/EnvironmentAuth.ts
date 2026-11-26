@@ -10,6 +10,7 @@ import {
   type AuthClientMetadata,
   type AuthClientSession,
   type AuthConnectDevice,
+  type AuthSessionAuthorizationSource,
   type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
   type AuthPairingLink,
@@ -546,6 +547,7 @@ export class EnvironmentAuth extends Context.Service<
       readonly label?: string;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly subject?: string;
+      readonly authorizationSource?: AuthSessionAuthorizationSource;
       readonly proofKeyThumbprint?: string;
       readonly purpose?: "startup";
       readonly mcpApproval?: AuthMcpClientAccess;
@@ -598,6 +600,10 @@ export class EnvironmentAuth extends Context.Service<
       readonly excludeSubjects?: ReadonlyArray<string>;
     }) => Effect.Effect<ReadonlyArray<AuthPairingLink>, ServerAuthInternalError>;
     readonly revokePairingLink: (id: string) => Effect.Effect<boolean, ServerAuthInternalError>;
+    readonly cancelPendingPairing: (
+      credential: string,
+      proofKeyThumbprint: string,
+    ) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly issueSession: (input?: {
       readonly ttl?: Duration.Duration;
       readonly subject?: string;
@@ -1021,6 +1027,7 @@ export const make = Effect.gen(function* () {
         .issue({
           method: "browser-session-cookie",
           subject: grant.subject,
+          ...(grant.authorizationSource ? { authorizationSource: grant.authorizationSource } : {}),
           scopes: grant.scopes,
           ...(previousSession?.method === "browser-session-cookie"
             ? { replaceSessionId: previousSession.sessionId }
@@ -1045,7 +1052,7 @@ export const make = Effect.gen(function* () {
 
   type ResolvedBootstrapGrant = Pick<
     PairingGrantStore.BootstrapGrant,
-    "scopes" | "subject" | "label"
+    "scopes" | "subject" | "label" | "authorizationSource"
   > & {
     readonly method: PairingGrantStore.BootstrapGrant["method"] | "reusable-dev-token";
   };
@@ -1176,6 +1183,9 @@ export const make = Effect.gen(function* () {
                 .issue({
                   method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
                   subject: grant.subject,
+                  ...(grant.authorizationSource
+                    ? { authorizationSource: grant.authorizationSource }
+                    : {}),
                   scopes: grantedScopes,
                   ...(input?.proofKeyThumbprint
                     ? {
@@ -1224,6 +1234,7 @@ export const make = Effect.gen(function* () {
       const issued = yield* bootstrapCredentials.issueOneTimeToken({
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject: input?.subject ?? "one-time-token",
+        ...(input?.authorizationSource ? { authorizationSource: input.authorizationSource } : {}),
         ...(input?.ttl ? { ttl: input.ttl } : {}),
         ...(input?.label ? { label: input.label } : {}),
         ...(input?.proofKeyThumbprint ? { proofKeyThumbprint: input.proofKeyThumbprint } : {}),
@@ -1283,6 +1294,15 @@ export const make = Effect.gen(function* () {
       Effect.mapError((cause) => new ServerAuthPairingLinkRevocationError({ cause })),
       Effect.withSpan("EnvironmentAuth.revokePairingLink"),
     );
+
+  const cancelPendingPairing: EnvironmentAuth["Service"]["cancelPendingPairing"] = Effect.fn(
+    "EnvironmentAuth.cancelPendingPairing",
+  )((credential, proofKeyThumbprint) =>
+    bootstrapCredentials.cancelPendingPairing(credential, proofKeyThumbprint).pipe(
+      Effect.mapError((cause) => new ServerAuthPairingLinkRevocationError({ cause })),
+      connectTrustLock.withPermits(1),
+    ),
+  );
 
   const recordConnectRequest = (pairingLinkId: string, client: AuthClientMetadata | undefined) =>
     client === undefined
@@ -1783,6 +1803,7 @@ export const make = Effect.gen(function* () {
     issueStartupPairingCredential,
     listPairingLinks,
     revokePairingLink,
+    cancelPendingPairing,
     issueSession,
     listSessions,
     revokeSession,

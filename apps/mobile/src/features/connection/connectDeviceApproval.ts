@@ -1,7 +1,8 @@
 import type { AuthClientMetadata, AuthPairingLink } from "@t3tools/contracts";
+import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import { msg } from "gt-react-native";
 
-import { m } from "../../i18n/messages";
+import { m, type MessageResolver } from "../../i18n/messages";
 
 export interface ConnectDeviceApprovalPrompt {
   readonly pairingLinkId: string;
@@ -9,11 +10,15 @@ export interface ConnectDeviceApprovalPrompt {
   readonly message: string;
 }
 
-export function describeConnectDevice(device: AuthClientMetadata | undefined): string {
+export function describeConnectDevice(
+  device: AuthClientMetadata | undefined,
+  resolve: MessageResolver = m,
+  fallback?: string,
+): string {
   const { label, browser, os } = device ?? {};
-  if (label) return label;
-  if (browser && os) return m(msg("{browser} on {os}", { browser, os }));
-  return browser ?? os ?? m(msg("A new device"));
+  if (label) return [...new Set([label, os, browser].filter(Boolean))].join(" · ");
+  if (browser && os) return resolve(msg("{browser} on {os}", { browser, os }));
+  return browser ?? os ?? fallback ?? resolve(msg("A new device"));
 }
 
 /** Requests waiting on approval that have not been shown yet, oldest first. */
@@ -32,17 +37,23 @@ export function connectDeviceApprovalPrompts(input: {
       (left, right) =>
         left.link.createdAt.epochMilliseconds - right.link.createdAt.epochMilliseconds,
     )
-    .map(({ link, verificationCode, client: device }) => ({
+    .map(({ link, verificationCode, client: device, source }) => ({
       pairingLinkId: link.id,
       title: m(msg("Approve this device?")),
       message: m(
         msg(
-          "{device} wants to connect to {environment} through {product}. It shows code {code}. Approve it only if that code matches.",
+          "{device} wants to connect to {environment} through {product}. It shows code {code}. Approve it only if that code matches. Requested access: {scopes}",
           {
             device: describeConnectDevice(device),
             environment: input.environmentLabel,
-            product: "T3 Connect",
+            product: source === "self-hosted-relay" ? m(msg("Self-hosted relay")) : "T3 Connect",
             code: verificationCode,
+            scopes: (link.permissions ?? link.scopes)
+              .map((scope) => {
+                const option = AUTH_SCOPE_OPTIONS.find((option) => option.scope === scope);
+                return option ? m(option.title) : scope;
+              })
+              .join(", "),
           },
         ),
       ),

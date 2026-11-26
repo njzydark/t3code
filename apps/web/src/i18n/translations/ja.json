@@ -518,6 +518,7 @@
   "5c5941732d5dfac6": "ペアリングの詳細が無効です。",
   "b8ca23ad7dda376e": "そのアドレスは別のマシンである {host} につながります。代わりに独立した環境として追加してください。",
   "f407ee3729a19a99": "接続する前に、このクライアントとリモートの T3 Code を更新してください。",
+  "9c0c8ec7c65f0898": "The connection request was denied or expired. Start Connect again.",
   "0c0150a90b582a7a": "環境の URL が無効です。",
   "693cb5c4fb40f109": "編集できるのは保存済みのベアラー環境のみです。",
   "5f5844b910cb1544": "保存済みのベアラー資格情報は利用できません。",
@@ -1995,12 +1996,12 @@
   "7af7f00b85cc2930": "操作の確認",
   "8b418a02b73f49b8": "この操作には確認が必要です。",
   "e74139c17fab1fa1": "確認",
+  "0c4fde0350190b39": "{device} wants to connect through {product}. Approve only if it shows code {code}. Requested access: {scopes}",
   "4a18481bea4b4ad5": "{environmentLabel} に新しいデバイスがサインインしました",
   "4144ab6aa487528a": "{device} が {product} 経由で接続しました。心当たりがない場合は確認してください。",
   "a10cfdb27152c757": "{count, plural, other {{count} 台のデバイス}}が {product} 経由で接続しました。心当たりがない場合は確認してください。",
   "4672f332c89dbcd9": "確認",
   "775a3e99e2638341": "デバイスが {environmentLabel} への接続を求めています",
-  "a8befcb9f1c61f60": "{device}。コード {code} が表示されている場合のみ承認してください。",
   "ac48cc297029db41": "承認",
   "c12ca3fea745def0": "デバイスを承認できませんでした",
   "af63f05ed2f5eeb3": "拒否",
@@ -4987,6 +4988,7 @@
   "13cf3cd978eef92a": "添付ファイルをこのマシンに保持",
   "a4ca7da61227002d": "自動ルーティングを選ぶ前に添付ファイルを削除し、選択したマシンで添付し直してください。",
   "512d8afab852df1a": "マシンを切り替えられませんでした",
+  "ee3ea4351c88e7d7": "このプロジェクトは利用できなくなりました。",
   "32e421d1e2dfdaff": "マシンを確認しています…",
   "0db14066bd4ce117": "自動で分散を利用できません",
   "55b562c00e37321b": "エージェントを強制停止できませんでした",
@@ -6928,6 +6930,19 @@
   "36b7fbe31bde05f3": "このリポジトリにはラベルがありません。",
   "2764eab1d2853980": "このリポジトリにはここに表示されている以上のラベルがあります。残りはホストで適用してください。",
   "5e5917c3b907c7d6": "適用済み",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "がコメントしました"
+    }
+  ],
   "404ee0e0134b60ae": "すべてのホストで「{query}」を検索しています",
   "ca612a0074954046": "確認しています...",
   "8b04f78f836b6c11": "このフィルターに一致する項目はありません",
@@ -7221,19 +7236,6 @@
       "t": "span",
       "i": 2,
       "c": "がレビューしました"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "がコメントしました"
     }
   ],
   "04ea50285b00dcdd": "概要",
@@ -7697,6 +7699,8 @@
   "d72f427e7133f2cb": "{duration} 接続中",
   "ec8d754031dc72fd": "最終接続: {time}",
   "b7406be04f4d7735": "まだ接続されていません。",
+  "35d976c93dd22ea9": "Automatically approved",
+  "8154e026b91bde3c": "Manually approved",
   "595a1c9d5f762fef": "クライアントのスコープ",
   "06ec30a199134db1": "ペアリング URL を作成できませんでした。",
   "79b1490795e4c205": "ペアリング URL を作成できませんでした",
@@ -8132,7 +8136,9 @@
   "ee07cdc25d1562d0": "Codex を更新",
   "c4e68ca143d1cb28": "アカウントを変更",
   "d356add77d113720": "切断",
-  "90fca700a649603e": "T3 Connect のデバイス",
+  "e5ebf0e43d8672a4": "Device approvals",
+  "7146b4963e8ab912": "Requested {date}",
+  "f606c15f39ea38a4": "Requested access: {scopes}",
   "2a2675972bd6818a": "{name} を取り消しますか？",
   "305e4fd592eb570a": "デバイスを取り消せませんでした",
   "c9ae6751db0ea9cb": [
@@ -9290,7 +9296,6 @@
   "b76e857a764ea02a": "{environment} の {path} のグループ化ルール",
   "e6e55f343639ae71": "デフォルト ({mode})",
   "87158e7b8e714bc6": "ここで設定するには、サイドバーからプロジェクトを追加してください。",
-  "ee3ea4351c88e7d7": "このプロジェクトは利用できなくなりました。",
   "062d19d24615e108": "プロジェクト名を空にすることはできません",
   "303af9de2741db90": "プロジェクト名を変更できませんでした",
   "f578154800d7af01": "プロジェクトのアイコンを更新できませんでした",
@@ -10104,6 +10109,7 @@
     },
     " から読み取っているため、未設定になります。シークレット自体には影響しません。"
   ],
+  "bb9f6fea765b8b6e": "Waiting for approval on {host}. Compare code {code} on both devices.",
   "f2840e3c9c99042a": "接続できませんでした。両方のマシンがオンラインで、最新の T3 Code を実行しているか確認してください。",
   "b3e6f662fc3e4f2d": "MCP クライアント",
   "fc4c1acbd708e980": "MCP トークンを作成できませんでした。",
@@ -10120,6 +10126,7 @@
   "752fa31f9a4b7702": "Disconnected",
   "9a37921edcadc6bd": "Connection error",
   "6e9b12a55d970d4e": "Not configured",
+  "cb9876f13e6f8b79": "Automatically approve new devices? Hosts with the same registration token can grant file, command, and client-management access without confirmation. A stolen token or compromised peer can authorize devices.",
   "96f9bceef1e19707": "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
   "5d3565d164dc27b1": "Let other devices reach this host through your own relay. No inbound host port is needed.",
   "3230508d1cfe0c38": "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
@@ -10127,6 +10134,10 @@
   "a5b699e503a921c6": "Relay registration token",
   "3dee8e329fca3469": "Saved on this host; leave blank to keep",
   "95dbfc92730ea987": "At least 32 characters",
+  "4d75c5a6f21baa91": "Automatically approve new devices",
+  "9bc441b4e7e964d6": "Update this host to manage device approvals.",
+  "2b93116b980bbd83": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
+  "36499d36e76d4ace": "New devices require approval. Existing clients retain access; revoke them in Authorized clients.",
   "31426dda1da03064": "Relay connection actions",
   "38fd76cdee43e19a": "Save and reconnect",
   "f31e3c09e92419fd": "Save and connect",
@@ -10134,9 +10145,11 @@
   "f1735a1816ec727b": "Use an HTTPS origin. HTTP is allowed only for loopback testing.",
   "07775b794325d398": "Host registration token",
   "f17b91afaa124ac4": "Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This admits hosts to the relay; devices use pairing links instead. Stored privately on this host.",
+  "bd77612a8ddae5f4": "This affects new requests only. Pending requests still require manual approval.",
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
+  "3be73c72482e6ab4": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
   "910a79263d640e22": "許可",
   "43e5c059e5308eee": "未許可",
   "32659cddbd37d220": "これらの権限は現在のルートに適用されます。他のルートでは権限が異なる場合があります。",

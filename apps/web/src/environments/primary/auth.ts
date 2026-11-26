@@ -2,6 +2,7 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type {
   AuthBrowserSessionResult,
   AuthClientMetadata,
+  AuthClientSession,
   AuthConnectDeviceRequest,
   AuthEnvironmentScope,
   ServerAuthSessionMethod,
@@ -133,6 +134,7 @@ export interface ServerClientSessionRecord {
   readonly lastConnectedAt: string | null;
   readonly connected: boolean;
   readonly current: boolean;
+  readonly authorizationSource?: AuthClientSession["authorizationSource"];
 }
 
 type ServerAuthGateState =

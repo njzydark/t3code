@@ -199,7 +199,9 @@ export function formatSessionList(
 
 export function formatConnectDeviceList(
   devices: {
-    readonly waiting: ReadonlyArray<AuthConnectDeviceRequest>;
+    readonly waiting: ReadonlyArray<
+      AuthConnectDeviceRequest & Pick<AuthPairingLink, "scopes" | "expiresAt">
+    >;
     readonly trusted: ReadonlyArray<AuthConnectDevice>;
   },
   options?: {
@@ -209,7 +211,10 @@ export function formatConnectDeviceList(
   if (options?.json) {
     return `${JSON.stringify(
       {
-        waiting: devices.waiting,
+        waiting: devices.waiting.map((request) => ({
+          ...request,
+          expiresAt: toIsoString(request.expiresAt),
+        })),
         trusted: devices.trusted.map((device) => ({
           ...device,
           approvedAt: toIsoString(device.approvedAt),
@@ -227,7 +232,8 @@ export function formatConnectDeviceList(
         ? "No devices are waiting for approval."
         : "Waiting for approval:",
       ...devices.waiting.map(
-        (request) => `  ${request.verificationCode}  ${describe(request.client)}`,
+        (request) =>
+          `  ${request.verificationCode}  ${describe(request.client)}  via ${request.source === "self-hosted-relay" ? "Self-hosted relay" : "T3 Connect"}${newline}    Scopes: ${request.scopes.join(", ")}${newline}    Expires: ${toIsoString(request.expiresAt)}`,
       ),
       "",
       devices.trusted.length === 0 ? "No trusted T3 Connect devices." : "Trusted:",

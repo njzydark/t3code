@@ -193,16 +193,16 @@ const connectDeviceListCommand = Command.make("list", {
   ...authLocationFlags,
   json: jsonFlag,
 }).pipe(
-  Command.withDescription(
-    "List T3 Connect devices waiting for approval and those already trusted.",
-  ),
+  Command.withDescription("List pending device requests and trusted T3 Connect devices."),
   Command.withHandler((flags) =>
     runWithEnvironmentAuth(
       flags,
       (environmentAuth) =>
         Effect.gen(function* () {
           const waiting = (yield* environmentAuth.listPairingLinks()).flatMap((link) =>
-            link.connectDeviceRequest ? [link.connectDeviceRequest] : [],
+            link.connectDeviceRequest
+              ? [{ ...link.connectDeviceRequest, scopes: link.scopes, expiresAt: link.expiresAt }]
+              : [],
           );
           const trusted = yield* environmentAuth.listConnectDevices();
           yield* Console.log(formatConnectDeviceList({ waiting, trusted }, { json: flags.json }));
@@ -220,7 +220,7 @@ const connectDeviceApproveCommand = Command.make("approve", {
   ...authLocationFlags,
   code: verificationCodeArgument,
 }).pipe(
-  Command.withDescription("Approve the waiting T3 Connect device that shows this code."),
+  Command.withDescription("Approve the waiting device request that shows this code."),
   Command.withHandler((flags) =>
     runWithEnvironmentAuth(flags, (environmentAuth) =>
       Effect.gen(function* () {
@@ -282,7 +282,7 @@ const connectDeviceRevokeCommand = Command.make("revoke", {
 );
 
 const connectDeviceCommand = Command.make("connect-device").pipe(
-  Command.withDescription("Approve and revoke devices that reach this host through T3 Connect."),
+  Command.withDescription("Approve device requests and revoke trusted T3 Connect devices."),
   Command.withSubcommands([
     connectDeviceListCommand,
     connectDeviceApproveCommand,

@@ -6,11 +6,13 @@ import {
   SelfHostedRelayOperationError,
   SELF_HOSTED_RELAY_CONNECT_PATH,
   type EnvironmentId,
+  type SelfHostedRelayApproval,
   sessionGrantsScope,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Schema from "effect/Schema";
 import { buildRelayPairingUrl } from "@t3tools/relay-transport";
 import { relayPublicBaseUrl, virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
@@ -97,6 +99,21 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
     label: "self-hosted-relay:connect-grant",
     tag: WS_METHODS.selfHostedRelayConnect,
   });
+  const update = createEnvironmentRpcCommand(input.runtime, {
+    label: "self-hosted-relay:update",
+    tag: WS_METHODS.selfHostedRelayUpdate,
+  });
+  const approval = Atom.family((_id: EnvironmentId) =>
+    Atom.make<SelfHostedRelayApproval | null>(null).pipe(Atom.keepAlive),
+  );
+  const cancellations = new Map<EnvironmentId, Deferred.Deferred<void>>();
+  const cancelConnect = createRuntimeCommand(input.runtime, {
+    label: "self-hosted-relay:cancel-connect",
+    execute: Effect.fn("selfHostedRelay.cancelConnect")(function* (environmentId: EnvironmentId) {
+      const cancellation = cancellations.get(environmentId);
+      if (cancellation) yield* Deferred.succeed(cancellation, undefined);
+    }),
+  });
   const connectCommand = createRuntimeCommand(input.runtime, {
     label: "self-hosted-relay:connect",
     concurrency: {
@@ -143,15 +160,29 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
             ),
           );
         if (issued === undefined) continue;
-        return yield* onboarding.value.registerPairing({
-          pairingUrl: buildRelayPairingUrl(
-            { ...issued.environment, relayUrl: issued.relayUrl },
-            issued.credential,
-          ),
-          ...(local ? { clientLabel: local.target.label } : {}),
-          expectedEnvironmentId: candidate.environmentId,
-          requireDpop: true,
-        });
+        const cancellation = yield* Deferred.make<void>();
+        cancellations.set(candidate.environmentId, cancellation);
+        registry.set(approval(candidate.environmentId), issued.approval ?? null);
+        return yield* onboarding.value
+          .registerPairing({
+            pairingUrl: buildRelayPairingUrl(
+              { ...issued.environment, relayUrl: issued.relayUrl },
+              issued.credential,
+            ),
+            ...(local ? { clientLabel: local.target.label } : {}),
+            expectedEnvironmentId: candidate.environmentId,
+            requireDpop: true,
+            ...(issued.approval ? { approval: issued.approval } : {}),
+          })
+          .pipe(
+            Effect.raceFirst(Deferred.await(cancellation).pipe(Effect.andThen(Effect.interrupt))),
+            Effect.ensuring(
+              Effect.sync(() => {
+                cancellations.delete(candidate.environmentId);
+                registry.set(approval(candidate.environmentId), null);
+              }),
+            ),
+          );
       }
       return yield* scopeRequiredError(AuthAccessWriteScope);
     }),
@@ -214,5 +245,15 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
     }
     return [...found.values()];
   }).pipe(Atom.withLabel("self-hosted-relay:discovered-environments"));
-  return { status, linkUrls, directory, mcpToken, candidates, connect };
+  return {
+    status,
+    linkUrls,
+    directory,
+    mcpToken,
+    candidates,
+    connect,
+    update,
+    approval,
+    cancelConnect,
+  };
 }

@@ -1,12 +1,19 @@
 import { msg } from "gt-i18n";
 import { detailFromError, translatableDetail } from "../errors/translatable.ts";
-import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
+import {
+  SELF_HOSTED_RELAY_CANCEL_PATH,
+  type SelfHostedRelayApproval,
+  type DesktopSshEnvironmentTarget,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
 import * as Clock from "effect/Clock";
 import { parseRelayPairingUrl } from "@t3tools/relay-transport";
 import { virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Schedule from "effect/Schedule";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -16,6 +23,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import {
   bootstrapRemoteBearerSession,
   exchangeRemoteDpopAccessToken,
+  cancelRemotePairing,
 } from "../authorization/remote.ts";
 import {
   deriveWsBaseUrl,
@@ -49,6 +57,7 @@ import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
 import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
+  readonly approval?: SelfHostedRelayApproval;
   readonly clientLabel?: string;
   readonly requireDpop?: boolean;
   readonly pairingUrl?: string;
@@ -143,6 +152,21 @@ export const preparePairingRegistration = Effect.fn(
         credential: selfHostedRelay.token,
       }
     : yield* resolvePairingTarget(input);
+  const cancel = input.approval
+    ? Effect.gen(function* () {
+        const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+        if (Option.isNone(signer)) return;
+        const proof = yield* signer.value.createProof({
+          method: "POST",
+          url: environmentEndpointUrl(target.httpBaseUrl, SELF_HOSTED_RELAY_CANCEL_PATH),
+        });
+        yield* cancelRemotePairing({
+          httpBaseUrl: target.httpBaseUrl,
+          credential: target.credential,
+          proof,
+        });
+      }).pipe(Effect.ignore)
+    : Effect.void;
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const clientLabel = input.clientLabel?.trim();
   const clientMetadata = clientLabel
@@ -193,56 +217,108 @@ export const preparePairingRegistration = Effect.fn(
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     yield* registry.assertKnownAddress({ ...route, profile: Option.some(route.profile) });
   }
-  const compatibilityError = orchestrationProtocolCompatibilityError(descriptor);
-  // An outdated server is still saved so it can be updated from this client.
-  if (compatibilityError !== null && compatibilityError.serverUpdateRequired !== true) {
-    return yield* compatibilityError;
-  }
-  // A key-bound session renews itself, but only on a host that can renew it. The proof is made
-  // before the one-time code is sent, so a device that cannot sign keeps the code for bearer.
-  const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
-  const dpopProof =
-    descriptor.capabilities.accessTokenRenewal === true && Option.isSome(signer)
-      ? yield* signer.value
-          .createProof({
-            method: "POST",
-            url: environmentEndpointUrl(target.httpBaseUrl, "/oauth/token"),
-          })
-          .pipe(Effect.option)
-      : Option.none<string>();
-  if (input.requireDpop && Option.isNone(dpopProof)) {
-    return yield* new ConnectionBlockedError({
-      reason: "unsupported",
-      ...translatableDetail(msg("Update this client and the remote T3 Code before connecting.")),
-    });
-  }
-  if (Option.isSome(dpopProof)) {
-    const access = yield* exchangeRemoteDpopAccessToken({
+  return yield* Effect.gen(function* () {
+    const compatibilityError = orchestrationProtocolCompatibilityError(descriptor);
+    // An outdated server is still saved so it can be updated from this client.
+    if (compatibilityError !== null && compatibilityError.serverUpdateRequired !== true) {
+      return yield* compatibilityError;
+    }
+    // A key-bound session renews itself, but only on a host that can renew it. The proof is made
+    // before the one-time code is sent, so a device that cannot sign keeps the code for bearer.
+    const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+    const dpopProof =
+      descriptor.capabilities.accessTokenRenewal === true && Option.isSome(signer)
+        ? yield* signer.value
+            .createProof({
+              method: "POST",
+              url: environmentEndpointUrl(target.httpBaseUrl, "/oauth/token"),
+            })
+            .pipe(Effect.option)
+        : Option.none<string>();
+    if (input.requireDpop && Option.isNone(dpopProof)) {
+      return yield* new ConnectionBlockedError({
+        reason: "unsupported",
+        ...translatableDetail(msg("Update this client and the remote T3 Code before connecting.")),
+      });
+    }
+    if (Option.isSome(dpopProof)) {
+      const exchange = (proof: string) =>
+        exchangeRemoteDpopAccessToken({
+          httpBaseUrl: target.httpBaseUrl,
+          credential: target.credential,
+          clientMetadata,
+          dpopProof: proof,
+        });
+      const approvalFailure = () =>
+        new ConnectionBlockedError({
+          reason: "authentication",
+          ...translatableDetail(
+            msg("The connection request was denied or expired. Start Connect again."),
+          ),
+        });
+      const access = yield* exchange(dpopProof.value).pipe(
+        Effect.catchTags({
+          EnvironmentConnectApprovalPendingError: (error) => {
+            if (!input.approval || Option.isNone(signer)) return Effect.fail(error);
+            return signer.value
+              .createProof({
+                method: "POST",
+                url: environmentEndpointUrl(target.httpBaseUrl, "/oauth/token"),
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ConnectionBlockedError({
+                      reason: "authentication",
+                      ...detailFromError(cause),
+                    }),
+                ),
+                Effect.flatMap(exchange),
+                Effect.retry({
+                  while: (failure) => failure._tag === "EnvironmentConnectApprovalPendingError",
+                  schedule: Schedule.spaced("2 seconds"),
+                }),
+                Effect.delay("2 seconds"),
+              );
+          },
+        }),
+        Effect.timeoutOrElse({
+          duration: "10 minutes",
+          orElse: () => Effect.fail(approvalFailure()),
+        }),
+        Effect.mapError((error) => {
+          if (
+            input.approval &&
+            error._tag === "EnvironmentAuthInvalidError" &&
+            !error.dpopFailureReason
+          ) {
+            return approvalFailure();
+          }
+          if (error._tag === "ConnectionBlockedError") return error;
+          return mapRemoteEnvironmentError(error);
+        }),
+      );
+      return new BearerConnectionRegistration({
+        ...route,
+        credential: new DpopConnectionCredential({
+          accessToken: access.access_token,
+          expiresAtEpochMs: (yield* Clock.currentTimeMillis) + access.expires_in * 1_000,
+        }),
+      });
+    }
+    const access = yield* bootstrapRemoteBearerSession({
       httpBaseUrl: target.httpBaseUrl,
       credential: target.credential,
       clientMetadata,
-      dpopProof: dpopProof.value,
     }).pipe(Effect.mapError(mapRemoteEnvironmentError));
+
     return new BearerConnectionRegistration({
       ...route,
-      credential: new DpopConnectionCredential({
-        accessToken: access.access_token,
-        expiresAtEpochMs: (yield* Clock.currentTimeMillis) + access.expires_in * 1_000,
+      credential: new BearerConnectionCredential({
+        token: access.access_token,
       }),
     });
-  }
-  const access = yield* bootstrapRemoteBearerSession({
-    httpBaseUrl: target.httpBaseUrl,
-    credential: target.credential,
-    clientMetadata,
-  }).pipe(Effect.mapError(mapRemoteEnvironmentError));
-
-  return new BearerConnectionRegistration({
-    ...route,
-    credential: new BearerConnectionCredential({
-      token: access.access_token,
-    }),
-  });
+  }).pipe(Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : cancel)));
 });
 
 const registerPairingConnection = Effect.fn(
