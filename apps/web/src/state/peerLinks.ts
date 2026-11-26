@@ -23,6 +23,7 @@ import { relayEnvironmentDiscovery } from "./relay";
 import { useEnvironmentQuery } from "./query";
 import { useEnvironmentsWithScope } from "./session";
 import { useAtomCommand } from "./use-atom-command";
+import { selfHostedRelayClients } from "./selfHostedRelay";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
 
@@ -39,6 +40,7 @@ export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: Environm
 );
 
 const offersNoLinksAtom = Atom.make(false).pipe(Atom.withLabel("peer-links:offered:none"));
+const noRelayUrlsAtom = Atom.make<ReadonlyMap<EnvironmentId, string>>(new Map());
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
@@ -90,6 +92,9 @@ export function usePeerLinkHosts() {
  */
 export function useLinkableMachines(environmentId: EnvironmentId, enabled: boolean) {
   const { environments } = useEnvironments();
+  const selfHostedRelayUrls = useAtomValue(
+    enabled ? selfHostedRelayClients.linkUrls : noRelayUrlsAtom,
+  );
   const discovery = useAtomValue(relayEnvironmentDiscovery.stateValueAtom);
   const refreshDiscovery = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
@@ -110,6 +115,7 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
     connect: discovery.environments,
+    selfHostedRelayUrls,
   });
 }
 
@@ -156,6 +162,9 @@ export function useLinkBackOffers(
   enabled: boolean,
 ) {
   const { environments } = useEnvironments();
+  const selfHostedRelayUrls = useAtomValue(
+    enabled ? selfHostedRelayClients.linkUrls : noRelayUrlsAtom,
+  );
   const discovery = useAtomValue(relayEnvironmentDiscovery.stateValueAtom);
   const writable = useEnvironmentsWithScope(environments, AuthAccessWriteScope);
   const source = linkableMachines({
@@ -163,6 +172,7 @@ export function useLinkBackOffers(
     threadEnvironmentId: null,
     links: [],
     connect: discovery.environments,
+    selfHostedRelayUrls,
   }).find((machine) => machine.environmentId === sourceId);
   const wanted = new Set(targetIds);
   const targets = environments.filter((environment) => wanted.has(environment.environmentId));

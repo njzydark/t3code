@@ -1,9 +1,11 @@
 import {
   AuthAccessWriteScope,
+  AuthRelayReadScope,
   EnvironmentId,
   SelfHostedRelayOperationError,
   type AuthSessionState,
   type SelfHostedRelayDirectory,
+  type SelfHostedRelayStatus,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { vi } from "vite-plus/test";
@@ -147,6 +149,89 @@ vi.mock("./session.ts", () => ({
 }));
 const sessions = Atom.family((_id: EnvironmentId) =>
   Atom.make<AsyncResult.AsyncResult<AuthSessionState, never>>(AsyncResult.initial()),
+);
+
+it.effect("offers the primary host's relay for links only while enabled and permitted", () =>
+  Effect.gen(function* () {
+    const local = EnvironmentId.make("mac-local");
+    const target = new PrimaryConnectionTarget({
+      environmentId: local,
+      label: "Local",
+      httpBaseUrl: "http://127.0.0.1:3773",
+      wsBaseUrl: "ws://127.0.0.1:3773",
+    });
+    const state = yield* SubscriptionRef.make<SelfHostedRelayStatus>({
+      relayUrl: "https://relay.example.test",
+      enabled: true,
+      hasRegistrationToken: true,
+      phase: "connected",
+      error: null,
+    });
+    let subscriptions = 0;
+    const supervisor = {
+      target,
+      session: yield* SubscriptionRef.make(
+        Option.some({
+          client: {
+            [WS_METHODS.selfHostedRelaySubscribe]: () => {
+              subscriptions++;
+              return SubscriptionRef.changes(state);
+            },
+          },
+        } as unknown as RpcSession),
+      ),
+    } as EnvironmentSupervisor["Service"];
+    const runtime = Atom.runtime(
+      Layer.succeed(EnvironmentRegistry, {
+        followStream: (_id, stream) =>
+          Stream.provideService(stream, EnvironmentSupervisor, supervisor),
+      } as Pick<EnvironmentRegistry["Service"], "followStream"> as EnvironmentRegistry["Service"]),
+    );
+    const atoms = createSelfHostedRelayAtoms({
+      runtime,
+      catalog: Atom.make({
+        entries: new Map<EnvironmentId, ConnectionCatalogEntry>([
+          [local, { target, profile: Option.none(), enabled: true }],
+        ]),
+      }),
+    });
+    const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (registry) =>
+      Effect.sync(() => registry.dispose()),
+    );
+    registry.mount(atoms.linkUrls);
+    expect(registry.get(atoms.linkUrls).size).toBe(0);
+    expect(subscriptions).toBe(0);
+    const session: AuthSessionState = {
+      authenticated: true,
+      auth: {
+        policy: "remote-reachable",
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test",
+      },
+      scopes: [AuthRelayReadScope],
+      permissions: [AuthRelayReadScope],
+    };
+    registry.set(sessions(local), AsyncResult.success(session));
+    const waitForUrl = (url: string | undefined) =>
+      AtomRegistry.toStream(registry, atoms.linkUrls).pipe(
+        Stream.filter((urls) => urls.get(local) === url),
+        Stream.runHead,
+      );
+    yield* waitForUrl("https://relay.example.test/v1/environments/mac-local");
+    expect(subscriptions).toBe(1);
+
+    yield* SubscriptionRef.update(state, (current) => ({ ...current, enabled: false }));
+    yield* waitForUrl(undefined);
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      enabled: true,
+      relayUrl: "https://replacement.example.test",
+    }));
+    yield* waitForUrl("https://replacement.example.test/v1/environments/mac-local");
+    registry.set(sessions(local), AsyncResult.success({ ...session, scopes: [], permissions: [] }));
+    expect(registry.get(atoms.linkUrls).size).toBe(0);
+  }).pipe(Effect.scoped),
 );
 
 it.effect.each([

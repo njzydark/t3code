@@ -66,6 +66,7 @@ import { environmentIdsKey } from "~/state/environmentAtomList";
 import { peerLinkEnvironment, peerLinkListsAtom, usePeerLinkHosts } from "~/state/peerLinks";
 import { formatEnvironmentQueryError } from "~/state/query";
 import { relayEnvironmentDiscovery } from "~/state/relay";
+import { selfHostedRelayClients } from "~/state/selfHostedRelay";
 import { preparedConnectionsAtom, useEnvironmentsWithScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { accessConfig } from "../auth/ConnectAgentSurface";
@@ -274,6 +275,7 @@ function useFleetGraph() {
   const gt = useGT();
   const m = useMessages();
   const { environments } = useEnvironments();
+  const selfHostedRelayUrls = useAtomValue(selfHostedRelayClients.linkUrls);
   const hosts = usePeerLinkHosts();
   const nowMinute = useNowMinute();
   const hostsKey = environmentIdsKey(hosts.map((host) => host.environmentId));
@@ -303,6 +305,7 @@ function useFleetGraph() {
     threadEnvironmentId: null,
     links: [],
     connect,
+    selfHostedRelayUrls,
   });
   const machineById = new Map(machines.map((machine) => [machine.environmentId, machine]));
   const listByHost = new Map(hosts.map((host, index) => [host.environmentId, lists[index]]));

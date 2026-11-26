@@ -4,14 +4,11 @@ import {
   type AuthMcpClientAccess,
   type EnvironmentId,
   type SelfHostedRelayMcpTokenResult,
-  WS_METHODS,
 } from "@t3tools/contracts";
-import { createEnvironmentRpcSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
 import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { View, ScrollView } from "react-native";
 import * as DateTime from "effect/DateTime";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { selfHostedRelayClients } from "../../state/selfHostedRelay";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
@@ -24,11 +21,6 @@ import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
 import { SettingsSection } from "./components/SettingsSection";
 import { LINK_ACCESS_CHOICES } from "../threads/LinkRequestCard";
-const status = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
-  label: "mobile:self-hosted-relay:status",
-  tag: WS_METHODS.selfHostedRelaySubscribe,
-  idleTtlMs: 0,
-});
 
 export function SelfHostedRelayMcpSettings({
   environmentId,
@@ -38,7 +30,9 @@ export function SelfHostedRelayMcpSettings({
   const gt = useGT();
   const messages = useMessages();
   const canRead = useEnvironmentScope(environmentId, AuthRelayReadScope);
-  const query = useEnvironmentQuery(canRead ? status({ environmentId, input: {} }) : null);
+  const query = useEnvironmentQuery(
+    canRead ? selfHostedRelayClients.status({ environmentId, input: {} }) : null,
+  );
   const canIssue = useAtomValue(selfHostedRelayClients.mcpToken.permissionAtom(environmentId));
   const issue = useAtomCommand(selfHostedRelayClients.mcpToken, { reportFailure: false });
   const [open, setOpen] = useState(false);
