@@ -280,49 +280,52 @@ describe("connection onboarding", () => {
     }),
   );
 
-  it.effect("prepares a persisted bearer registration from pairing details", () =>
-    Effect.gen(function* () {
-      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
-      const registration = yield* preparePairingRegistration({
-        host: "remote.example.test",
-        pairingCode: "pairing-token",
-      }).pipe(Effect.provide(layerPairingOnboarding(undefined, calls)));
+  it.effect.each([undefined, "M4 MacBook Pro", "  "])(
+    "prepares a persisted bearer registration with client label %s",
+    (clientLabel) =>
+      Effect.gen(function* () {
+        const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+        const registration = yield* preparePairingRegistration({
+          host: "remote.example.test",
+          pairingCode: "pairing-token",
+          ...(clientLabel === undefined ? {} : { clientLabel }),
+        }).pipe(Effect.provide(layerPairingOnboarding(undefined, calls)));
 
-      expect(registration).toMatchObject({
-        _tag: "BearerConnectionRegistration",
-        target: {
-          environmentId: "environment-paired",
-          label: "Paired environment",
-          connectionId: "bearer:environment-paired:https://remote.example.test",
-        },
-        profile: {
-          environmentId: "environment-paired",
-          label: "Paired environment",
-          connectionId: "bearer:environment-paired:https://remote.example.test",
-          httpBaseUrl: "https://remote.example.test/",
-          wsBaseUrl: "wss://remote.example.test/",
-        },
-        credential: {
-          token: "bearer-token",
-        },
-      });
-      expect(calls.map((call) => call.url)).toEqual([
-        "https://remote.example.test/.well-known/t3/environment",
-        "https://remote.example.test/oauth/token",
-      ]);
+        expect(registration).toMatchObject({
+          _tag: "BearerConnectionRegistration",
+          target: {
+            environmentId: "environment-paired",
+            label: "Paired environment",
+            connectionId: "bearer:environment-paired:https://remote.example.test",
+          },
+          profile: {
+            environmentId: "environment-paired",
+            label: "Paired environment",
+            connectionId: "bearer:environment-paired:https://remote.example.test",
+            httpBaseUrl: "https://remote.example.test/",
+            wsBaseUrl: "wss://remote.example.test/",
+          },
+          credential: {
+            token: "bearer-token",
+          },
+        });
+        expect(calls.map((call) => call.url)).toEqual([
+          "https://remote.example.test/.well-known/t3/environment",
+          "https://remote.example.test/oauth/token",
+        ]);
 
-      const tokenRequest = calls.find((call) => call.url.endsWith("/oauth/token"));
-      const tokenBody =
-        tokenRequest?.init.body instanceof Uint8Array
-          ? new TextDecoder().decode(tokenRequest.init.body)
-          : String(tokenRequest?.init.body);
-      const tokenParams = new URLSearchParams(tokenBody);
-      expect(tokenParams.get("subject_token")).toBe("pairing-token");
-      expect(tokenParams.has("scope")).toBe(false);
-      expect(tokenParams.get("client_label")).toBe("T3 Code Test");
-      expect(tokenParams.get("client_device_type")).toBe("desktop");
-      expect(tokenParams.get("client_os")).toBe("Test OS");
-    }),
+        const tokenRequest = calls.find((call) => call.url.endsWith("/oauth/token"));
+        const tokenBody =
+          tokenRequest?.init.body instanceof Uint8Array
+            ? new TextDecoder().decode(tokenRequest.init.body)
+            : String(tokenRequest?.init.body);
+        const tokenParams = new URLSearchParams(tokenBody);
+        expect(tokenParams.get("subject_token")).toBe("pairing-token");
+        expect(tokenParams.has("scope")).toBe(false);
+        expect(tokenParams.get("client_label")).toBe(clientLabel?.trim() || "T3 Code Test");
+        expect(tokenParams.get("client_device_type")).toBe("desktop");
+        expect(tokenParams.get("client_os")).toBe("Test OS");
+      }),
   );
 
   it.effect("turns a switched-off environment back on when it is paired again", () =>
@@ -611,21 +614,28 @@ describe("connection onboarding", () => {
     { name: "a host that renews, with a device key", renews: true, signer: true, dpop: true },
     { name: "a host that renews, without a device key", renews: true, signer: false, dpop: false },
     { name: "an older host, with a device key", renews: false, signer: true, dpop: false },
-  ])("pairs with $name as DPoP: $dpop", ({ renews, signer, dpop }) =>
-    Effect.gen(function* () {
+  ])("pairs with $name as DPoP: $dpop", ({ renews, signer, dpop }) => {
+    const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    return Effect.gen(function* () {
       const registration = yield* preparePairingRegistration({
         host: "remote.example.test",
         pairingCode: "pairing-token",
+        clientLabel: "M4 MacBook Pro",
       });
       expect(registration.credential).toMatchObject(
         dpop
           ? { _tag: "DpopConnectionCredential", accessToken: "dpop-token" }
           : { _tag: "BearerConnectionCredential", token: "bearer-token" },
       );
+      const tokenBody = calls.find((call) => call.url.endsWith("/oauth/token"))!.init.body;
+      const params = new URLSearchParams(
+        tokenBody instanceof Uint8Array ? new TextDecoder().decode(tokenBody) : String(tokenBody),
+      );
+      expect(params.get("client_label")).toBe("M4 MacBook Pro");
     }).pipe(
       Effect.provide(
         Layer.merge(
-          layerPairingOnboarding({ accessTokenRenewal: renews }),
+          layerPairingOnboarding({ accessTokenRenewal: renews }, calls),
           signer
             ? Layer.succeed(
                 ManagedRelay.ManagedRelayDpopSigner,
@@ -637,8 +647,8 @@ describe("connection onboarding", () => {
             : Layer.empty,
         ),
       ),
-    ),
-  );
+    );
+  });
 
   it.effect.each([
     { renews: false, signer: true },

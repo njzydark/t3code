@@ -49,6 +49,7 @@ import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
 import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
+  readonly clientLabel?: string;
   readonly requireDpop?: boolean;
   readonly pairingUrl?: string;
   readonly host?: string;
@@ -143,6 +144,10 @@ export const preparePairingRegistration = Effect.fn(
       }
     : yield* resolvePairingTarget(input);
   const presentation = yield* ClientCapabilities.ClientPresentation;
+  const clientLabel = input.clientLabel?.trim();
+  const clientMetadata = clientLabel
+    ? { ...presentation.metadata, label: clientLabel }
+    : presentation.metadata;
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
     httpBaseUrl: target.httpBaseUrl,
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));
@@ -215,7 +220,7 @@ export const preparePairingRegistration = Effect.fn(
     const access = yield* exchangeRemoteDpopAccessToken({
       httpBaseUrl: target.httpBaseUrl,
       credential: target.credential,
-      clientMetadata: presentation.metadata,
+      clientMetadata,
       dpopProof: dpopProof.value,
     }).pipe(Effect.mapError(mapRemoteEnvironmentError));
     return new BearerConnectionRegistration({
@@ -229,7 +234,7 @@ export const preparePairingRegistration = Effect.fn(
   const access = yield* bootstrapRemoteBearerSession({
     httpBaseUrl: target.httpBaseUrl,
     credential: target.credential,
-    clientMetadata: presentation.metadata,
+    clientMetadata,
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));
 
   return new BearerConnectionRegistration({
