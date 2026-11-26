@@ -60,13 +60,15 @@ another device. A Linux host can use the fork's CLI instead; see the
 
 Use `T3_RELAY_TOKENS` with a JSON map of group names to secrets for separate
 host directories; `T3_RELAY_REGISTRATION_TOKEN` remains supported. Paired
-clients discover online machines in the same group through Settings, then pair
-each machine using its own code. See the [directory and MCP guide](../../docs/user/self-hosted-relay.md#discover-other-environments)
+clients discover online machines in the same group through Settings and connect
+without generating another pairing code. See the [directory and MCP guide](../../docs/user/self-hosted-relay.md#discover-other-environments)
 for public MCP tokens and linked environments on one domain with path routing.
 
-The registration token admits hosts to the relay; devices use private,
-one-use pairing links instead. Never put either credential in an image or
-share it publicly. The `web` image opens an unconnected client for new
+The registration token admits hosts to the relay and defines a trusted group:
+a host holding it can authorize a device on another host sharing it. Devices
+first pair one host using a private, one-use link, then receive their own
+key-bound sessions for other group hosts. Never put registration tokens or
+pairing credentials in an image or share them publicly. The `web` image opens an unconnected client for new
 visitors, not a public list of hosts. The `core` image does not serve web pages.
 
 Connection state is in memory; restarting the relay drops active connections.
