@@ -49,6 +49,7 @@ import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
 import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
+  readonly requireDpop?: boolean;
   readonly pairingUrl?: string;
   readonly host?: string;
   readonly pairingCode?: string;
@@ -204,6 +205,12 @@ export const preparePairingRegistration = Effect.fn(
           })
           .pipe(Effect.option)
       : Option.none<string>();
+  if (input.requireDpop && Option.isNone(dpopProof)) {
+    return yield* new ConnectionBlockedError({
+      reason: "unsupported",
+      ...translatableDetail(msg("Update this client and the remote T3 Code before connecting.")),
+    });
+  }
   if (Option.isSome(dpopProof)) {
     const access = yield* exchangeRemoteDpopAccessToken({
       httpBaseUrl: target.httpBaseUrl,

@@ -13067,5 +13067,6 @@
   "fce4ad679a63ecd9": "Connectez un agent externe avec une URL et un jeton. Révoquez l’accès dans Clients autorisés.",
   "a793a7a0ac6f2476": "Nom du client",
   "d951fe94dcf0553f": "Accès",
-  "fc73ae0b15389efa": "Associer"
+  "f407ee3729a19a99": "Mettez à jour ce client et le T3 Code distant avant de vous connecter.",
+  "f2840e3c9c99042a": "Connexion impossible. Vérifiez que les deux machines sont en ligne et utilisent la dernière version de T3 Code."
 }

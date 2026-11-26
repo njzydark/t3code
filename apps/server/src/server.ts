@@ -1,3 +1,4 @@
+import * as SelfHostedRelayHttp from "./cloud/SelfHostedRelayHttp.ts";
 import * as SelfHostedRelayHost from "./cloud/SelfHostedRelayHost.ts";
 import * as SelfHostedRelay from "./cloud/SelfHostedRelay.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -919,6 +920,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
       Layer.provide(ServerHttp.layerApiBodyLimit),
     ),
+    SelfHostedRelayHttp.layer,
     ServerHttp.layerOtlpTracesProxyRoute,
     ServerHttp.layerDesktopReadinessProofRoute,
     ServerHttp.layerAssetRoute,

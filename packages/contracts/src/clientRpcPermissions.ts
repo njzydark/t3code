@@ -26,6 +26,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.providerMcpSignInComplete]: AuthProvidersManageScope,
   [WS_METHODS.selfHostedRelayUpdate]: AuthRelayWriteScope,
   [WS_METHODS.selfHostedRelayForget]: AuthRelayWriteScope,
+  [WS_METHODS.selfHostedRelayConnect]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayPair]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayMcpToken]: AuthAccessWriteScope,
   [WS_METHODS.selfHostedRelayPush]: AuthOrchestrationReadScope,

@@ -1,16 +1,32 @@
-import { EnvironmentId, type SelfHostedRelayDirectory, WS_METHODS } from "@t3tools/contracts";
+import {
+  AuthAccessWriteScope,
+  EnvironmentId,
+  SelfHostedRelayOperationError,
+  type AuthSessionState,
+  type SelfHostedRelayDirectory,
+  WS_METHODS,
+} from "@t3tools/contracts";
+import { vi } from "vite-plus/test";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
 import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { BearerConnectionTarget, PrimaryConnectionTarget } from "../connection/model.ts";
+import {
+  BearerConnectionTarget,
+  PrimaryConnectionTarget,
+  type NetworkStatus,
+} from "../connection/model.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
+import { ConnectionOnboarding, type PairingConnectionInput } from "../connection/onboarding.ts";
+import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
+import { parseRelayPairingUrl } from "@t3tools/relay-transport";
+import { SELF_HOSTED_RELAY_CONNECT_PATH } from "@t3tools/contracts";
 import { createSelfHostedRelayAtoms } from "./selfHostedRelay.ts";
 
 it.effect.each(["primary", "relay"] as const)(
@@ -20,7 +36,11 @@ it.effect.each(["primary", "relay"] as const)(
       const local = EnvironmentId.make("mac-local");
       const remote = EnvironmentId.make("mac-remote");
       const relayUrl = "https://relay.example.test";
-      const address = { relayUrl, route: "a".repeat(32), peerId: "fixture-peer" };
+      const address = {
+        relayUrl,
+        route: "a".repeat(32),
+        peerId: "12D3KooWFixturePeerIdentityForTest",
+      };
       const entry: ConnectionCatalogEntry = {
         target:
           mode === "primary"
@@ -95,6 +115,7 @@ it.effect.each(["primary", "relay"] as const)(
       expect(registry.get(atoms.candidates)).toEqual([
         {
           environmentId: remote,
+          viaEnvironmentId: local,
           label: "Other Mac",
           relayUrl,
           route: "b".repeat(32),
@@ -118,5 +139,131 @@ it.effect.each(["primary", "relay"] as const)(
         ]),
       });
       expect(registry.get(atoms.candidates)).toEqual([]);
+    }).pipe(Effect.scoped),
+);
+
+vi.mock("./session.ts", () => ({
+  createEnvironmentSessionAtoms: () => ({ sessionStateAtom: sessions }),
+}));
+const sessions = Atom.family((_id: EnvironmentId) =>
+  Atom.make<AsyncResult.AsyncResult<AuthSessionState, never>>(AsyncResult.initial()),
+);
+
+it.effect.each([
+  { allowed: true, hostFails: false },
+  { allowed: false, hostFails: false },
+  { allowed: true, hostFails: true },
+])(
+  "connects directly from discovery and honors access limits (allowed: $allowed, failure: $hostFails)",
+  ({ allowed, hostFails }) =>
+    Effect.gen(function* () {
+      const source = EnvironmentId.make("source");
+      const target = EnvironmentId.make("target");
+      const candidate = {
+        environmentId: target,
+        viaEnvironmentId: source,
+        label: "Target",
+        relayUrl: "https://relay.example.test",
+        route: "b".repeat(32),
+        peerId: "12D3KooWFixturePeerIdentityForTest",
+      };
+      const grants: Array<{ environmentId: EnvironmentId; proof: string }> = [];
+      const registrations: PairingConnectionInput[] = [];
+      const supervisor = {
+        target: new BearerConnectionTarget({
+          environmentId: source,
+          label: "Source",
+          connectionId: "source",
+        }),
+        session: yield* SubscriptionRef.make(
+          Option.some({
+            client: {
+              [WS_METHODS.selfHostedRelayConnect]: (input: {
+                environmentId: EnvironmentId;
+                proof: string;
+              }) =>
+                Effect.suspend(() => {
+                  grants.push(input);
+                  return hostFails
+                    ? Effect.fail(new SelfHostedRelayOperationError({ operation: "unavailable" }))
+                    : Effect.succeed({
+                        environment: candidate,
+                        relayUrl: candidate.relayUrl,
+                        credential: "one-use-key-bound-grant",
+                      });
+                }),
+            },
+          } as unknown as RpcSession),
+        ),
+      } as EnvironmentSupervisor["Service"];
+      const entries = yield* SubscriptionRef.make<
+        ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>
+      >(new Map());
+      const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
+      const runtime = Atom.runtime(
+        Layer.mergeAll(
+          Layer.mock(EnvironmentRegistry)({
+            entries,
+            networkStatus,
+            run: (_id, effect) =>
+              effect.pipe(Effect.provideService(EnvironmentSupervisor, supervisor)),
+          }),
+          Layer.mock(ConnectionOnboarding)({
+            registerPairing: (input) =>
+              Effect.sync(() => {
+                registrations.push(input);
+                return target;
+              }),
+          }),
+          Layer.succeed(ManagedRelayDpopSigner, {
+            thumbprint: Effect.succeed("client-key"),
+            createProof: ({ method, url }) =>
+              Effect.sync(() => {
+                expect(method).toBe("POST");
+                expect(url).toBe(
+                  `https://${candidate.route}.t3-relay.invalid${SELF_HOSTED_RELAY_CONNECT_PATH}`,
+                );
+                return "device-proof";
+              }),
+          }),
+        ),
+      );
+      const atoms = createSelfHostedRelayAtoms({
+        runtime,
+        catalog: Atom.make({ entries: new Map<EnvironmentId, ConnectionCatalogEntry>() }),
+      });
+      const registry = yield* Effect.acquireRelease(
+        Effect.sync(() => AtomRegistry.make()),
+        (registry) => Effect.sync(() => registry.dispose()),
+      );
+      registry.set(
+        sessions(source),
+        AsyncResult.success({
+          authenticated: true,
+          auth: {
+            policy: "remote-reachable",
+            bootstrapMethods: [],
+            sessionMethods: [],
+            sessionCookieName: "test",
+          },
+          scopes: allowed ? [AuthAccessWriteScope] : [],
+          permissions: allowed ? [AuthAccessWriteScope] : [],
+        }),
+      );
+      const result = yield* atoms.connect.run(registry, candidate).pipe(Effect.result);
+      expect(result._tag).toBe(allowed && !hostFails ? "Success" : "Failure");
+      expect(grants).toEqual(allowed ? [{ environmentId: target, proof: "device-proof" }] : []);
+      expect(registrations).toHaveLength(allowed && !hostFails ? 1 : 0);
+      if (registrations[0]) {
+        expect(registrations[0]).toMatchObject({
+          expectedEnvironmentId: target,
+          requireDpop: true,
+        });
+        expect(parseRelayPairingUrl(registrations[0].pairingUrl!)).toMatchObject({
+          route: candidate.route,
+          peerId: candidate.peerId,
+          token: "one-use-key-bound-grant",
+        });
+      }
     }).pipe(Effect.scoped),
 );

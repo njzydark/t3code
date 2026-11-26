@@ -52,6 +52,18 @@ export const SelfHostedRelayEnvironment = Schema.Struct({
   route: Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/)),
   peerId: Schema.String,
 });
+export const SELF_HOSTED_RELAY_CONNECT_PATH = "/api/self-hosted-relay/connect";
+export const SelfHostedRelayConnectInput = Schema.Struct({
+  environmentId: EnvironmentId,
+  proof: Schema.String.check(Schema.isMaxLength(8192)),
+});
+export type SelfHostedRelayConnectInput = typeof SelfHostedRelayConnectInput.Type;
+export const SelfHostedRelayConnectResult = Schema.Struct({
+  environment: SelfHostedRelayEnvironment,
+  relayUrl: Schema.String,
+  credential: Schema.String,
+});
+export type SelfHostedRelayConnectResult = typeof SelfHostedRelayConnectResult.Type;
 export const SelfHostedRelayDirectory = Schema.Struct({
   relayUrl: Schema.String,
   environments: Schema.Array(SelfHostedRelayEnvironment),

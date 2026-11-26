@@ -1,5 +1,7 @@
 import { AuthCreatePairingCredentialInput } from "./auth.ts";
 import {
+  SelfHostedRelayConnectInput,
+  SelfHostedRelayConnectResult,
   SelfHostedRelayStatus,
   SelfHostedRelayDirectory,
   SelfHostedRelayMcpTokenInput,
@@ -683,6 +685,7 @@ export const WS_METHODS = {
   selfHostedRelayUpdate: "selfHostedRelay.update",
   selfHostedRelayForget: "selfHostedRelay.forget",
   selfHostedRelayPair: "selfHostedRelay.pair",
+  selfHostedRelayConnect: "selfHostedRelay.connect",
   selfHostedRelayDirectory: "selfHostedRelay.directory",
   selfHostedRelayMcpToken: "selfHostedRelay.mcpToken",
   selfHostedRelayPush: "selfHostedRelay.push",
@@ -1252,6 +1255,11 @@ const WsSelfHostedRelayForgetRpc = Rpc.make(WS_METHODS.selfHostedRelayForget, {
 const WsSelfHostedRelayPairRpc = Rpc.make(WS_METHODS.selfHostedRelayPair, {
   payload: AuthCreatePairingCredentialInput,
   success: SelfHostedRelayPairResult,
+  error: selfHostedRelayError,
+});
+const WsSelfHostedRelayConnectRpc = Rpc.make(WS_METHODS.selfHostedRelayConnect, {
+  payload: SelfHostedRelayConnectInput,
+  success: SelfHostedRelayConnectResult,
   error: selfHostedRelayError,
 });
 const WsSelfHostedRelayDirectoryRpc = Rpc.make(WS_METHODS.selfHostedRelayDirectory, {
@@ -2666,6 +2674,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSelfHostedRelayUpdateRpc,
   WsSelfHostedRelayForgetRpc,
   WsSelfHostedRelayPairRpc,
+  WsSelfHostedRelayConnectRpc,
   WsSelfHostedRelayDirectoryRpc,
   WsSelfHostedRelayMcpTokenRpc,
   WsSelfHostedRelayPushRpc,

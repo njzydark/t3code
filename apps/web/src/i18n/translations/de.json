@@ -13067,5 +13067,6 @@
   "fce4ad679a63ecd9": "Verbinde einen externen Agenten mit URL und Token. Widerrufe den Zugriff unter Autorisierte Clients.",
   "a793a7a0ac6f2476": "Clientname",
   "d951fe94dcf0553f": "Zugriff",
-  "fc73ae0b15389efa": "Koppeln"
+  "f407ee3729a19a99": "Aktualisiere diesen Client und das entfernte T3 Code, bevor du die Verbindung herstellst.",
+  "f2840e3c9c99042a": "Verbindung fehlgeschlagen. Prüfe, ob beide Rechner online sind und die neueste Version von T3 Code verwenden."
 }

@@ -640,6 +640,38 @@ describe("connection onboarding", () => {
     ),
   );
 
+  it.effect.each([
+    { renews: false, signer: true },
+    { renews: true, signer: false },
+  ])(
+    "does not spend a group credential without DPoP (renewal: $renews, signer: $signer)",
+    ({ renews, signer }) =>
+      Effect.gen(function* () {
+        const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+        const error = yield* preparePairingRegistration({
+          ...PAIRING_INPUT,
+          requireDpop: true,
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              layerPairingOnboarding({ accessTokenRenewal: renews }, calls),
+              signer
+                ? Layer.succeed(ManagedRelay.ManagedRelayDpopSigner, {
+                    thumbprint: Effect.succeed("device-key"),
+                    createProof: () => Effect.succeed("proof"),
+                  })
+                : Layer.empty,
+            ),
+          ),
+          Effect.flip,
+        );
+        expect(error).toMatchObject({ reason: "unsupported" });
+        expect(calls.map((call) => call.url)).toEqual([
+          "https://remote.example.test/.well-known/t3/environment",
+        ]);
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("refuses to add a route that reaches a different machine, keeping the code", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
