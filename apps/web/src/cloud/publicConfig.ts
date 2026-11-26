@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import {
   clerkFrontendApiHostnameFromPublishableKey,
   relayClerkTokenOptions,
@@ -71,6 +72,7 @@ export function setServerRelayTelemetry(allowed: boolean | null): void {
 }
 
 export function relayTelemetryEnabled(): boolean | null {
+  if (telemetryDisabled) return false;
   if (typeof window === "undefined") return true;
   if (window.desktopBridge) {
     desktopRelayTelemetry ??= window.desktopBridge.getRelayTelemetryEnabled();

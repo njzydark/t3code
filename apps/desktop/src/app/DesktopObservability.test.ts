@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import desktopPackageJson from "../../package.json" with { type: "json" };
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -396,3 +397,5 @@ describe("DesktopObservability", () => {
     );
   });
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

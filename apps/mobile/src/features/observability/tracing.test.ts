@@ -10,6 +10,8 @@ import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import { setConnectionTracesEnabled } from "./diagnosticsSetting";
 import * as Tracing from "./tracing";
 
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));
+
 vi.mock("expo-constants", () => ({
   default: {
     expoConfig: {

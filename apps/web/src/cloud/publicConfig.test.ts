@@ -1,6 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { hasCloudPublicConfig } from "./publicConfig.ts";
+import {
+  hasCloudPublicConfig,
+  relayTelemetryEnabled,
+  resolveRelayTracingConfig,
+} from "./publicConfig.ts";
+
+it("refuses tracing credentials even when the desktop allows telemetry", () => {
+  vi.stubGlobal("window", { desktopBridge: { getRelayTelemetryEnabled: () => true } });
+  vi.stubEnv("VITE_RELAY_OTLP_TRACES_URL", "https://collector.example.test/v1/traces");
+  vi.stubEnv("VITE_RELAY_OTLP_TRACES_DATASET", "test");
+  vi.stubEnv("VITE_RELAY_OTLP_TRACES_TOKEN", "test-token");
+  expect(relayTelemetryEnabled()).toBe(false);
+  expect(resolveRelayTracingConfig()).toBeNull();
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
@@ -1113,3 +1114,5 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

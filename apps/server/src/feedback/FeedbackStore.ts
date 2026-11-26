@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 // Stores agent feedback reports and shows the cards of requested ones. A card is answered from
 // what it recorded, so it stays answerable after its turn ends and after a restart.
 import {
@@ -91,7 +92,7 @@ export const allowedBy = (
   userRequested: boolean,
   source: FeedbackSource,
 ): Effect.Effect<void, FeedbackOffError | FeedbackNotRequestedError> =>
-  mode === "off"
+  telemetryDisabled || mode === "off"
     ? Effect.fail(new FeedbackOffError({}))
     : mode === "on-request" && !userRequested
       ? Effect.fail(new FeedbackNotRequestedError({ source }))

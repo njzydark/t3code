@@ -1,4 +1,6 @@
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
+import * as NodeChildProcess from "node:child_process";
+import * as NodePath from "node:path";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
 import appleAppSiteAssociation from "../web/public/.well-known/apple-app-site-association.json";
@@ -6,7 +8,13 @@ import assetLinks from "../web/public/.well-known/assetlinks.json";
 
 // Keep config parsing independent of local env files and build credentials.
 vi.mock("../../scripts/lib/public-config.ts", () => ({
-  loadRepoEnv: () => ({ APP_VARIANT: process.env.APP_VARIANT }),
+  loadRepoEnv: () => ({
+    APP_VARIANT: process.env.APP_VARIANT,
+    T3CODE_RELAY_URL: "https://relay.example.test",
+    EXPO_PUBLIC_OTLP_TRACES_URL: "https://traces.example.test/v1/traces",
+    EXPO_PUBLIC_OTLP_TRACES_DATASET: "mobile-traces",
+    EXPO_PUBLIC_OTLP_TRACES_TOKEN: "configured-ingest-token",
+  }),
 }));
 
 afterEach(() => {
@@ -44,4 +52,27 @@ it.each([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);
+});
+
+it("compiles an unreachable native crash endpoint and omits tracing credentials", async () => {
+  const config = await loadConfig("production");
+  expect(config.extra?.eas.observe.endpointUrl).toBe("https://observe.invalid");
+  expect(config.extra?.observability).toEqual({
+    tracesUrl: null,
+    tracesDataset: null,
+    tracesToken: null,
+  });
+  expect(config.extra?.relay.url).toBe("https://relay.example.test");
+});
+
+it.each(["apple", "android"])("does not register Observe native startup on %s", (platform) => {
+  const modules: unknown = JSON.parse(
+    NodeChildProcess.execFileSync(
+      NodePath.join(import.meta.dirname, "node_modules/.bin/expo-modules-autolinking"),
+      ["search", "--platform", platform, "--json"],
+      { cwd: import.meta.dirname, encoding: "utf8" },
+    ),
+  );
+  expect(modules).not.toHaveProperty("expo-observe");
+  expect(modules).toHaveProperty("expo-notifications");
 });

@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "./telemetryPolicy.ts";
 import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
@@ -168,7 +169,7 @@ export function layer(
   resource: RelayClientTracingResource,
   options?: { readonly isEnabled?: () => boolean },
 ): Layer.Layer<never, never, HttpClient.HttpClient> {
-  if (config === null) {
+  if (telemetryDisabled || config === null) {
     return Layer.succeed(RelayClientTracer, Option.none());
   }
 

@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import { useAtomValue } from "@effect/atom-react";
 import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -100,6 +101,7 @@ function endpointStatus(
 export function TelemetryExportSettings() {
   const gt = useGT();
   const { environment, scope } = useSettingsScope();
+  if (telemetryDisabled) return null;
   if (scope.kind !== "environment" || !environment) {
     return (
       <SettingsSection title={gt("OpenTelemetry export")} id="telemetry-export">

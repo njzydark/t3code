@@ -1,38 +1,47 @@
-# Product usage data and diagnostics
+# Diagnostics and telemetry in this fork
 
-T3 Code sends lightweight product usage events and relay connection traces to keep the app reliable and fast. Prompts, responses, file contents, and credentials are never included (unless you explicitly approve an [agent feedback](#agent-feedback) card with conversation text attached).
+This fork disables telemetry uploads in the CLI, desktop, web, and mobile apps.
+The rule is part of the application: environment variables, saved preferences,
+managed policies, and configured receiver credentials cannot turn uploads on.
+It applies to new builds; an already installed older version keeps its previous
+behavior until updated.
 
 ## Product usage events
 
-The server sends usage events to `ingest.t3.codes` under a hashed random install ID (plus a hashed T3 Connect account ID when signed in, and random client device IDs). Events contain provider, catalog model name (non-catalog models report as custom), reasoning effort, permission mode, turn/request outcome, duration, release channel, and token counts.
+Product usage events are not queued or sent. The server does not create an
+analytics install ID, and clients do not send analytics account or device IDs.
+Client names and device information used to identify **Authorized clients** remain
+part of normal access management.
 
 ## Disable telemetry
 
-- **Server / CLI**: Set `T3CODE_TELEMETRY_ENABLED=false` or `DO_NOT_TRACK=1` before starting (`DO_NOT_TRACK=1` takes precedence). CI environments (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `JENKINS_URL`) disable telemetry by default unless `T3CODE_TELEMETRY_ENABLED=true`.
-- **Desktop app**: Export `T3CODE_TELEMETRY_ENABLED=false` or `DO_NOT_TRACK=1` in your shell profile (macOS/Linux) or user environment variables (Windows) and restart.
-- **Managed policy**: Administrators can set `"telemetry": false` in [managed policy](./managed-policy.md#other-capabilities) for servers and desktop apps.
-- **Mobile app**: Toggle **Send crash reports** and **Send connection traces** separately in **Settings → About T3 Code → Diagnostics**.
+No setup is needed in this fork. Mobile crash reporting is excluded from the
+native app, and the app does not register its JavaScript crash handler. Connection
+traces stay off even when an older installation saved an enabled preference.
 
 ## Relay connection diagnostics
 
-T3 Connect sends connection timings, request paths, environment/thread IDs, and error types (no addresses, logs, or stack frames) to Axiom. Disabled by the server telemetry opt-outs above or by `T3CODE_OTEL_SDK_DISABLED` / `OTEL_SDK_DISABLED`.
+Relay connection traces are not exported. Local connection logs remain available
+for troubleshooting your own environments.
 
 ## Agent feedback
 
-Optional tool for agents to report T3 Code bugs or missing capabilities. Configure in **Settings → Labs → Agent feedback**:
-
-- **Off** (default): Feedback tools and `t3 feedback` are disabled.
-- **When I ask**: Agents submit a report only when you ask, shown as an interactive approval card before anything leaves your machine.
-- **Automatic**: Also sends minimal automated reports (problem kind + tool/command name only—no text or conversation) when an agent hits a T3 tool failure; enables `t3 feedback` CLI reporting (up to 10/hour).
-
-Approval cards show exact payloads (expected/actual/workaround, turn outline with no text, and optional **Include the conversation** up to 16 KB). File paths, usernames, hostnames, git remotes, and secret-like strings are scrubbed before saving, and reports use one-off random IDs. Inspect local reports with `t3 feedback list [--json]`.
+Agent feedback uploads are disabled, including automatic reports and reports
+requested through an agent or the CLI. Existing feedback approval cards cannot
+send a report after updating to this fork.
 
 ## Agent activity for mobile notifications
 
-**Settings → Sharing & access → Publish agent activity** sends project/thread titles, model names, and turn status to the T3 Connect relay for [mobile notifications and live activities](./mobile-notifications.md). This is independent of telemetry—turn it off directly on the host if you don't want it.
+**Publish agent activity**, mobile notifications, and live activities are separate
+features that continue to work when configured. They send the information needed
+for those features to the selected notification service.
 
 ## Export diagnostics to your own OpenTelemetry receiver
 
-Open **Settings → Maintenance → Diagnostics** (per environment) and enter OTLP HTTP endpoints (e.g. `http://localhost:4318/v1/traces`), save, and restart the server. Use **Test** to verify connectivity.
+External OTLP exports of traces, metrics, and logs are disabled, including exports
+to a receiver you configured yourself. Old endpoint settings are ignored.
 
-`T3CODE_OTLP_*_URL` and standard `OTEL_EXPORTER_OTLP_*` env vars override saved settings (use `T3CODE_OTLP_HEADERS` / `T3CODE_OTLP_PROTOCOL=http/protobuf` or the standard `OTEL_EXPORTER_OTLP_*` equivalents for auth and protobuf).
+Local logs, trace files, crash details logged locally, and CPU/memory diagnostics
+remain available under **Settings → Maintenance → Diagnostics** and `t3 trace`.
+These controls apply to T3 Code itself; provider CLIs and other applications have
+their own telemetry settings.

@@ -10,6 +10,7 @@ import {
   uploadSourceMap,
   type SourceMapUpload,
 } from "./sourcemap-upload.mts";
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 
 const warn = (message: string) => {
   // GitHub Actions shows this as an annotation; elsewhere it is a log line.
@@ -19,6 +20,7 @@ const warn = (message: string) => {
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 async function main() {
+  if (telemetryDisabled) return;
   const [mode, distDir] = process.argv.slice(2);
   const credentials = parseCredentials(process.env.MOBILE_SOURCEMAPS_R2);
   if (!credentials) {

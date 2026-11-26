@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./telemetryPolicy": {
+      "types": "./src/telemetryPolicy.ts",
+      "import": "./src/telemetryPolicy.ts"
+    },
     "./png": {
       "types": "./src/png.ts",
       "import": "./src/png.ts"

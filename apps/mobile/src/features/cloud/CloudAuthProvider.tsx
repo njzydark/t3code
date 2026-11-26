@@ -25,7 +25,7 @@ export function CloudAuthProvider(props: { readonly children: ReactNode }) {
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <ClerkProvider telemetry={false} publishableKey={publishableKey} tokenCache={tokenCache}>
       {props.children}
     </ClerkProvider>
   );
