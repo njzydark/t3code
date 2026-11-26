@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import { useContext, useEffect, useEffectEvent, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -13,8 +14,10 @@ import { useEnvironments } from "./environments";
 import { relayEnvironmentDiscovery } from "./relay";
 import { useEnvironmentQuery } from "./query";
 import { useAtomCommand } from "./use-atom-command";
+import { selfHostedRelayClients } from "./selfHostedRelay";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
+const noRelayUrlsAtom = Atom.make<ReadonlyMap<EnvironmentId, string>>(new Map());
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
@@ -63,6 +66,9 @@ export function useLinkedEnvironments(
  */
 export function useLinkableMachines(environmentId: EnvironmentId, enabled: boolean) {
   const { environments } = useEnvironments();
+  const selfHostedRelayUrls = useAtomValue(
+    enabled ? selfHostedRelayClients.linkUrls : noRelayUrlsAtom,
+  );
   const discovery = useAtomValue(relayEnvironmentDiscovery.stateValueAtom);
   const refreshDiscovery = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
@@ -83,5 +89,6 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
     connect: discovery.environments,
+    selfHostedRelayUrls,
   });
 }
