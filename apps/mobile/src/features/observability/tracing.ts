@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { type ReleaseChannel, releaseResourceAttributes } from "@t3tools/shared/releaseResource";
 import * as RelayTracing from "@t3tools/shared/relayTracing";
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 
 import { hasTracingPublicConfig, resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { connectionTracesEnabled } from "./diagnosticsSetting";
@@ -38,7 +39,7 @@ export function layerFromConfig(config: TracingConfig | null, resource: TracingR
       ? "dev"
       : RELEASE_CHANNEL_BY_VARIANT[resource.appVariant];
   return RelayTracing.layer(
-    config,
+    telemetryDisabled ? null : config,
     {
       serviceName: "t3code-mobile",
       serviceVersion: resource.serviceVersion,

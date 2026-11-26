@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { relayClerkTokenOptions } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import * as Schema from "effect/Schema";
 
 export class CloudPublicConfigMissingError extends Schema.TaggedError<CloudPublicConfigMissingError>()(
@@ -66,9 +67,9 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
     },
     observability: {
-      tracesUrl: normalizeSecureUrl(extra?.observability?.tracesUrl),
-      tracesDataset: trimNonEmpty(extra?.observability?.tracesDataset),
-      tracesToken: trimNonEmpty(extra?.observability?.tracesToken),
+      tracesUrl: telemetryDisabled ? null : normalizeSecureUrl(extra?.observability?.tracesUrl),
+      tracesDataset: telemetryDisabled ? null : trimNonEmpty(extra?.observability?.tracesDataset),
+      tracesToken: telemetryDisabled ? null : trimNonEmpty(extra?.observability?.tracesToken),
     },
   } satisfies CloudPublicConfig;
 }
@@ -90,6 +91,7 @@ export function hasTracingPublicConfig(
   config: CloudPublicConfig = resolveCloudPublicConfig(),
 ): config is TracingPublicConfig {
   return Boolean(
+    !telemetryDisabled &&
     config.observability.tracesUrl &&
     config.observability.tracesDataset &&
     config.observability.tracesToken,

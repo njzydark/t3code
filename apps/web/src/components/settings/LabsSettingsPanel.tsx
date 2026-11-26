@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import { msg } from "gt-react";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { useAuth } from "@clerk/react";
@@ -421,6 +422,7 @@ function AgentFeedbackRow() {
   const m = useMessages();
   const mixed = useScopedSettingsMixed(["agentFeedback"]);
   if (
+    telemetryDisabled ||
     scope.kind === "project" ||
     scope.kind === "checkout" ||
     connectedEnvironments.length === 0 ||

@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -74,6 +75,7 @@ let activeConfigKey: string | null = null;
 let pendingConfiguration = Promise.resolve();
 
 export function configureClientTracing(): Promise<void> {
+  if (telemetryDisabled) return Promise.resolve();
   if (activeConfigKey !== null) {
     return pendingConfiguration;
   }

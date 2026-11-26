@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -306,7 +307,7 @@ export const make = Effect.gen(function* () {
       mcpHostedApproval: true,
       shellThreadFamilies: true,
       shellOlderSettled: true,
-      agentFeedback: true,
+      agentFeedback: !telemetryDisabled,
     },
   };
 

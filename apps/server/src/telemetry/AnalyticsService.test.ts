@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -504,3 +505,5 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
     }),
   );
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

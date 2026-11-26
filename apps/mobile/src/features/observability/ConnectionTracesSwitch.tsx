@@ -40,11 +40,14 @@ export function ConnectionTracesSwitch() {
   const [saving, setSaving] = useState(false);
   const gt = useGT();
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
-  const enabled = AsyncResult.isSuccess(preferences)
-    ? preferences.value.connectionTracesEnabled !== false
-    : true;
+  const enabled =
+    connectionTracesAvailable &&
+    (AsyncResult.isSuccess(preferences)
+      ? preferences.value.connectionTracesEnabled !== false
+      : true);
 
   const change = (value: boolean) => {
+    if (!connectionTracesAvailable) return;
     setSaving(true);
     void applyConnectionTracesChange(value, () =>
       savePreferences({ connectionTracesEnabled: value }),
@@ -55,7 +58,7 @@ export function ConnectionTracesSwitch() {
     <SettingsSwitchRow
       icon="point.3.connected.trianglepath.dotted"
       label={gt("Send connection traces")}
-      disabled={!ready || saving}
+      disabled={!connectionTracesAvailable || !ready || saving}
       value={enabled}
       onValueChange={change}
     />

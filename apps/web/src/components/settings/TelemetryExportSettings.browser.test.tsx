@@ -175,3 +175,5 @@ describe("TelemetryExportSettings", () => {
     await expect.element(screen.getByText("Connected · 33 ms")).toBeInTheDocument();
   });
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

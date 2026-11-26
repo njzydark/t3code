@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "./telemetryPolicy.ts";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Data from "effect/Data";
@@ -282,7 +283,7 @@ export const load: Effect.Effect<OtelEnvironment> = Config.all({
   }),
 }).pipe(
   Effect.map(({ t3, spec, resource, generic, exporters, ...own }) => {
-    const disabled = t3.value ?? spec.value ?? false;
+    const disabled = telemetryDisabled || (t3.value ?? spec.value ?? false);
     const signals = disabled
       ? undefined
       : {
@@ -299,7 +300,7 @@ export const load: Effect.Effect<OtelEnvironment> = Config.all({
       resource.warning,
       ...Array.from(used, (setting) => setting.warning),
     ].filter((warning) => warning !== undefined);
-    if (disabled) {
+    if (disabled && !telemetryDisabled) {
       warnings.push(
         t3.value
           ? "T3CODE_OTEL_SDK_DISABLED is set, so no telemetry is exported, whatever configured it"
@@ -353,6 +354,7 @@ export const isRelayTracingEnabled = (env: Readonly<Record<string, string | unde
   }).pipe(
     Effect.map(
       ({ telemetry, t3, spec }) =>
+        !telemetryDisabled &&
         (telemetry.value ?? !isCiEnvironment(env)) &&
         !isDoNotTrackSet(env) &&
         !(t3.value ?? spec.value ?? false),
@@ -378,7 +380,7 @@ export const resolveSignalEndpoint = (
   t3: { readonly url: string | undefined; readonly export: SignalExport },
   fallback: { readonly bootstrapUrl: string | undefined; readonly settingsUrl: string | undefined },
 ): SignalEndpoint | undefined => {
-  if (otel.disabled) {
+  if (telemetryDisabled || otel.disabled) {
     return undefined;
   }
   const t3Url = blankAsUnset(t3.url);

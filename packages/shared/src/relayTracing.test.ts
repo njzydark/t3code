@@ -172,3 +172,5 @@ describe("withLocalTracing", () => {
     }),
   );
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

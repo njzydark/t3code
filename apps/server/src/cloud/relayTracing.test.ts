@@ -1,4 +1,5 @@
-import { assert, it, vi } from "@effect/vitest";
+import { vi } from "vite-plus/test";
+import { assert, it } from "@effect/vitest";
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as RelayTracing from "@t3tools/shared/relayTracing";
@@ -77,3 +78,5 @@ it("reports the server's relay tracing policy to clients", () => {
     ),
   );
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

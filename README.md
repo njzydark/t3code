@@ -41,6 +41,10 @@ It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kir
 
 ### This unofficial fork
 
+Telemetry uploads are disabled in this fork, including usage analytics, connection
+traces, crash reports, agent feedback, and OTLP exports. Environment variables and
+saved settings cannot enable them. Local logs and resource diagnostics remain available.
+
 Download this fork's applications from [njzydark/t3code Releases](https://github.com/njzydark/t3code/releases).
 For the standalone CLI on **Linux x64**, use the installer hosted in this repository:
 

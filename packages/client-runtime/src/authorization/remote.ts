@@ -1,3 +1,4 @@
+import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import {
   AuthAccessTokenType,
   type AuthClientPresentationMetadata,
@@ -53,6 +54,7 @@ export interface ClientOwnerParams {
  * are connecting, so it can count the environment as theirs.
  */
 export const readClientOwnerParams = Effect.gen(function* () {
+  if (telemetryDisabled) return {} satisfies ClientOwnerParams;
   const session = yield* Effect.serviceOption(ClientCapabilities.CloudSession);
   const account = Option.isSome(session) ? yield* session.value.identity : Option.none();
   const device = yield* (yield* ClientCapabilities.AnalyticsDevice).id;
@@ -105,10 +107,10 @@ export const appendClientConnectionParams = (
   if (connectionMethod) {
     url.searchParams.set("connectionMethod", connectionMethod);
   }
-  if (owners?.connect) {
+  if (!telemetryDisabled && owners?.connect) {
     url.searchParams.set("clientOwner", owners.connect);
   }
-  if (owners?.device) {
+  if (!telemetryDisabled && owners?.device) {
     url.searchParams.set("clientDevice", owners.device);
   }
 };

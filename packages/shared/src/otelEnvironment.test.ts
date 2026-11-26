@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -464,3 +465,5 @@ describe("isRelayTracingEnabled", () => {
     }),
   );
 });
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));

@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import * as NodeOS from "node:os";
 
 import { expect, it } from "@effect/vitest";
@@ -1035,3 +1036,5 @@ it.effect("a mode switch under way when a report is stored wins", () =>
     }).pipe(Effect.provide(layer));
   }),
 );
+
+vi.mock("@t3tools/shared/telemetryPolicy", () => ({ telemetryDisabled: false }));
