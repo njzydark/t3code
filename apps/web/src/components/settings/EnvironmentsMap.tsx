@@ -48,6 +48,7 @@ import {
   useState,
 } from "react";
 
+import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
@@ -245,23 +246,26 @@ function useConnectMachines() {
   const gt = useGT();
   const m = useMessages();
   const discovery = useRelayEnvironmentDiscovery();
+  const session = useAtomValue(managedRelaySessionAtom);
+  const canDiscover = hasCloudPublicConfig() && session !== null;
   const refresh = useAtomCommand(relayEnvironmentDiscovery.refresh, { reportFailure: false });
   const discoverIfUnasked = useEffectEvent(() => {
-    if (hasCloudPublicConfig() && !discovery.listed && !discovery.refreshing) void refresh();
+    if (!discovery.listed && !discovery.refreshing) void refresh();
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one T3 Connect listing when the map mounts, the request the list makes on mount
   useEffect(() => {
-    discoverIfUnasked();
-  }, []);
+    if (canDiscover) discoverIfUnasked();
+  }, [canDiscover]);
   const machines = useRetainedRelayEnvironments();
   // A failed listing is not an account with no machines: say so, with a way to ask again.
-  const message = discovery.refreshing
-    ? null
-    : discovery.offline && !discovery.listed
-      ? gt("You appear to be offline.")
-      : thrownErrorMessage(Option.getOrNull(discovery.error), m);
+  const message =
+    !canDiscover || discovery.refreshing
+      ? null
+      : discovery.offline && !discovery.listed
+        ? gt("You appear to be offline.")
+        : thrownErrorMessage(Option.getOrNull(discovery.error), m);
   return {
-    machines,
+    machines: canDiscover ? machines : new Map(),
     problem: message === null ? null : { message, retry: () => void refresh() },
   };
 }

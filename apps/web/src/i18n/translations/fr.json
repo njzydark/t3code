@@ -13066,9 +13066,9 @@
   "93eca6c0c52fc6ea": "Copier l’URL et le jeton",
   "02b38ff73121821c": "Expiration : {date}",
   "b3e6f662fc3e4f2d": "Client MCP",
-  "fce4ad679a63ecd9": "Connectez un agent externe avec une URL et un jeton. Révoquez l’accès dans Clients autorisés.",
   "a793a7a0ac6f2476": "Nom du client",
   "d951fe94dcf0553f": "Accès",
   "f407ee3729a19a99": "Mettez à jour ce client et le T3 Code distant avant de vous connecter.",
-  "f2840e3c9c99042a": "Connexion impossible. Vérifiez que les deux machines sont en ligne et utilisent la dernière version de T3 Code."
+  "f2840e3c9c99042a": "Connexion impossible. Vérifiez que les deux machines sont en ligne et utilisent la dernière version de T3 Code.",
+  "c77ff54a4258a813": "Méthode de connexion"
 }

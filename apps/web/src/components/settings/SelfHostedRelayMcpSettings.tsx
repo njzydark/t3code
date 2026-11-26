@@ -11,18 +11,8 @@ import { selfHostedRelayClients } from "~/state/selfHostedRelay";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { accessConfig } from "../auth/ConnectAgentSurface";
-import { SettingsRow } from "./settingsLayout";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogPopup,
-  DialogHeader,
-  DialogTitle,
-  DialogPanel,
-  DialogDescription,
-} from "../ui/dialog";
 import { Input } from "../ui/input";
 
 export function SelfHostedRelayMcpTokenPanel({
@@ -112,42 +102,5 @@ export function SelfHostedRelayMcpTokenPanel({
         </p>
       ) : null}
     </div>
-  );
-}
-
-export function SelfHostedRelayMcpSettings({
-  environmentId,
-}: {
-  readonly environmentId: EnvironmentId;
-}) {
-  const gt = useGT();
-  const canIssue = useAtomValue(selfHostedRelayClients.mcpToken.permissionAtom(environmentId));
-  return (
-    <SettingsRow
-      title={gt("MCP token")}
-      description={gt(
-        "Connect an outside agent using a URL and token. Revoke access under Authorized clients.",
-      )}
-      control={
-        <Dialog>
-          <DialogTrigger render={<Button size="sm" variant="outline" disabled={!canIssue} />}>
-            {gt("Create token")}
-          </DialogTrigger>
-          <DialogPopup>
-            <DialogHeader>
-              <DialogTitle>{gt("MCP token")}</DialogTitle>
-              <DialogDescription>
-                {gt(
-                  "Connect an outside agent using a URL and token. Revoke access under Authorized clients.",
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogPanel>
-              <SelfHostedRelayMcpTokenPanel environmentId={environmentId} />
-            </DialogPanel>
-          </DialogPopup>
-        </Dialog>
-      }
-    />
   );
 }

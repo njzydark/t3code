@@ -159,7 +159,7 @@ export function FleetDetails(props: FleetDetailsProps) {
       tabIndex={-1}
       role="group"
       aria-label={gt("Details")}
-      className="min-h-20 border-t border-border/60 text-xs outline-none"
+      className="border-t border-border/60 text-xs outline-none"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || selection === null || event.target !== panel.current) return;
         // Base UI's dialog closes on a document Esc listener.

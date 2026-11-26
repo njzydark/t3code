@@ -1,4 +1,3 @@
-import { SelfHostedRelayMcpSettings } from "./SelfHostedRelayMcpSettings";
 import { T, msg, useGT, useMessages } from "gt-react";
 import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
@@ -276,7 +275,6 @@ export function SelfHostedRelaySettings({
           </Dialog>
         }
       />
-      {data?.enabled ? <SelfHostedRelayMcpSettings environmentId={environmentId} /> : null}
     </>
   );
 }
