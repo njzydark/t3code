@@ -118,6 +118,7 @@ export function linkableMachines(input: {
   readonly threadEnvironmentId: EnvironmentId | null;
   readonly links: ReadonlyArray<Pick<PeerLinkSummary, "environmentId" | "status">>;
   readonly connect: ReadonlyMap<string, RelayDiscoveredEnvironment>;
+  readonly selfHostedRelayUrls?: ReadonlyMap<EnvironmentId, string>;
 }): ReadonlyArray<LinkableMachine> {
   const linkedIds = new Set(
     input.links.flatMap((link) => (link.status === "expired" ? [] : [link.environmentId])),
@@ -136,6 +137,7 @@ export function linkableMachines(input: {
         return url === null ? [] : [url];
       });
       const connect = input.connect.get(environment.environmentId)?.environment.endpoint;
+      const selfHostedRelayUrl = input.selfHostedRelayUrls?.get(environment.environmentId);
       return {
         environmentId: environment.environmentId,
         label: environment.entry.target.label,
@@ -147,6 +149,7 @@ export function linkableMachines(input: {
           ...new Set([
             ...reported,
             ...routes,
+            ...(selfHostedRelayUrl === undefined ? [] : [selfHostedRelayUrl]),
             ...(connect === undefined ? [] : [connect.httpBaseUrl]),
           ]),
         ].filter((url) => !isLoopbackUrl(url)),

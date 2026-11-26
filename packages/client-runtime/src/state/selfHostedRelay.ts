@@ -1,10 +1,16 @@
 import { msg } from "gt-i18n";
 import { translatableDetail } from "../errors/translatable.ts";
-import { SELF_HOSTED_RELAY_CONNECT_PATH, type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  AuthRelayReadScope,
+  SELF_HOSTED_RELAY_CONNECT_PATH,
+  type EnvironmentId,
+  sessionGrantsScope,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Effect from "effect/Effect";
 import { buildRelayPairingUrl } from "@t3tools/relay-transport";
-import { virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
+import { relayPublicBaseUrl, virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
 import { ConnectionOnboarding } from "../connection/onboarding.ts";
 import { ConnectionBlockedError } from "../connection/model.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
@@ -12,6 +18,7 @@ import * as Option from "effect/Option";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { connectionRoutes } from "../connection/routes.ts";
+import { createEnvironmentSessionAtoms } from "./session.ts";
 import {
   createRuntimeCommand,
   createEnvironmentRpcCommand,
@@ -33,6 +40,31 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
     readonly entries: ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>;
   }>;
 }) {
+  const status = createEnvironmentRpcSubscriptionAtomFamily(input.runtime, {
+    label: "self-hosted-relay:status",
+    tag: WS_METHODS.selfHostedRelaySubscribe,
+    idleTtlMs: 0,
+  });
+  const sessions = createEnvironmentSessionAtoms(input.runtime);
+  const linkUrls = Atom.make((get) => {
+    const urls = new Map<EnvironmentId, string>();
+    for (const [environmentId, entry] of get(input.catalog).entries) {
+      if (!entry.enabled) continue;
+      const session = get(sessions.sessionStateAtom(environmentId));
+      if (!AsyncResult.isSuccess(session) || !sessionGrantsScope(session.value, AuthRelayReadScope))
+        continue;
+      const result = get(status({ environmentId, input: {} }));
+      if (
+        AsyncResult.isSuccess(result) &&
+        result.value.enabled &&
+        result.value.hasRegistrationToken &&
+        result.value.relayUrl !== ""
+      ) {
+        urls.set(environmentId, relayPublicBaseUrl(result.value.relayUrl, environmentId));
+      }
+    }
+    return urls;
+  }).pipe(Atom.withLabel("self-hosted-relay:link-urls"));
   const directory = createEnvironmentRpcSubscriptionAtomFamily(input.runtime, {
     label: "self-hosted-relay:directory",
     tag: WS_METHODS.selfHostedRelayDirectory,
@@ -115,5 +147,5 @@ export function createSelfHostedRelayAtoms<R, E>(input: {
     }
     return [...found.values()];
   }).pipe(Atom.withLabel("self-hosted-relay:discovered-environments"));
-  return { directory, mcpToken, candidates, connect };
+  return { status, linkUrls, directory, mcpToken, candidates, connect };
 }
