@@ -4,7 +4,11 @@ import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";
 
 import { BearerConnectionProfile } from "./connection/catalog.ts";
-import { BearerConnectionTarget, RelayConnectionTarget } from "./connection/model.ts";
+import {
+  BearerConnectionTarget,
+  PrimaryConnectionTarget,
+  RelayConnectionTarget,
+} from "./connection/model.ts";
 import type { EnvironmentPresentation } from "./connection/presentation.ts";
 import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 import {
@@ -189,6 +193,45 @@ const discovered = (
 });
 
 describe("linkableMachines", () => {
+  it("includes the local host's relay address when its client connects over loopback", () => {
+    const saved = presentation("environment-here", "Here", {
+      saved: ["http://localhost:3773"],
+      reported: ["http://192.168.1.20:3773"],
+    });
+    const local = {
+      ...saved,
+      entry: {
+        ...saved.entry,
+        target: new PrimaryConnectionTarget({
+          environmentId: saved.environmentId,
+          label: "Here",
+          httpBaseUrl: "http://localhost:3773",
+          wsBaseUrl: "ws://localhost:3773",
+        }),
+        profile: Option.none(),
+      },
+    };
+    const relayUrl = "https://relay.example.com/v1/environments/environment-here";
+    expect(
+      linkableMachines({
+        environments: [local],
+        threadEnvironmentId: EnvironmentId.make("environment-studio"),
+        links: [],
+        connect: new Map(),
+        selfHostedRelayUrls: new Map([[local.environmentId, relayUrl]]),
+      })[0]?.urls,
+    ).toEqual(["http://192.168.1.20:3773", relayUrl]);
+    expect(
+      linkableMachines({
+        environments: [local],
+        threadEnvironmentId: null,
+        links: [],
+        connect: new Map(),
+        selfHostedRelayUrls: new Map([[local.environmentId, relayUrl]]),
+      })[0]?.urls,
+    ).toEqual(["http://192.168.1.20:3773", relayUrl]);
+  });
+
   it("lists the other machines with reported addresses before saved ones, once each", () => {
     const here = presentation("environment-here", "Here", { saved: ["http://localhost:3773"] });
     // A loopback address would name the linking server itself, so it is no address of the VPS.
