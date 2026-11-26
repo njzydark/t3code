@@ -6,5 +6,6 @@ export const StoredSelfHostedRelayConfig = Schema.fromJsonString(
     relayUrl: Schema.String,
     registrationToken: Schema.String,
     enabled: Schema.Boolean,
+    autoApproveNewDevices: Schema.optionalKey(Schema.Boolean),
   }),
 );

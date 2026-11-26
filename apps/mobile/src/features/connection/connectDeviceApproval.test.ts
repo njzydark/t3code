@@ -15,6 +15,34 @@ const link = (id: string, createdAtMs: number, request?: AuthPairingLink["connec
   }) as unknown as AuthPairingLink;
 
 describe("connectDeviceApprovalPrompts", () => {
+  it.each(["t3-connect", "self-hosted-relay"] as const)(
+    "distinguishes requested access for %s devices with identical metadata",
+    (source) => {
+      const request = {
+        verificationCode: "ABCD-EFGH",
+        ...(source === "self-hosted-relay" ? { source } : {}),
+        client: { deviceType: "desktop" as const, label: "Work laptop", os: "macOS" },
+      };
+      const prompts = connectDeviceApprovalPrompts({
+        environmentLabel: "Mac mini",
+        pairingLinks: [
+          { ...link("read", 1_000, request), scopes: ["filesystem:read"] },
+          {
+            ...link("manage", 2_000, request),
+            scopes: ["filesystem:read"],
+            permissions: ["access:write", "terminal:operate"],
+          },
+        ],
+        shownIds: new Set(),
+      });
+
+      expect(prompts[0]?.message).toContain("Requested access: Read files");
+      expect(prompts[0]?.message).not.toContain("Manage access");
+      expect(prompts[1]?.message).toContain("Requested access: Manage access, Use terminals");
+      expect(prompts[1]?.message).not.toContain("Read files");
+    },
+  );
+
   it("prompts once per waiting device, oldest first, and skips ordinary pairing links", () => {
     const pairingLinks = [
       link("newer", 2_000, { verificationCode: "WXYZ-2345" }),
@@ -22,6 +50,11 @@ describe("connectDeviceApprovalPrompts", () => {
       link("older", 1_000, {
         verificationCode: "ABCD-EFGH",
         client: { deviceType: "desktop", browser: "Chrome", os: "macOS" },
+      }),
+      link("relay", 1_500, {
+        verificationCode: "RELY-5678",
+        source: "self-hosted-relay",
+        client: { deviceType: "desktop", label: "Work laptop", os: "macOS" },
       }),
     ];
 
@@ -31,9 +64,13 @@ describe("connectDeviceApprovalPrompts", () => {
       shownIds: new Set(["newer"]),
     });
 
-    expect(prompts.map((prompt) => prompt.pairingLinkId)).toEqual(["older"]);
+    expect(prompts.map((prompt) => prompt.pairingLinkId)).toEqual(["older", "relay"]);
     expect(prompts[0]?.message).toContain("Chrome on macOS wants to connect to Mac mini");
     expect(prompts[0]?.message).toContain("ABCD-EFGH");
+    expect(prompts[0]?.message).toContain("through T3 Connect");
+    expect(prompts[1]?.message).toContain("Work laptop · macOS");
+    expect(prompts[1]?.message).toContain("through Self-hosted relay");
+    expect(prompts[1]?.message).toContain("RELY-5678");
   });
 });
 

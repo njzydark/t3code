@@ -31,6 +31,7 @@ import {
   DialogTrigger,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SettingsRow } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
@@ -68,10 +69,15 @@ export function SelfHostedRelaySettings({
   const [open, setOpen] = useState(false);
   const [relayUrl, setRelayUrl] = useState("");
   const [token, setToken] = useState("");
+  const [autoApproveNewDevices, setAutoApproveNewDevices] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const data = query.data;
-  const dirty = relayUrl !== data?.relayUrl || token.length > 0;
+  const approvalPolicyAvailable = data?.autoApproveNewDevices !== undefined;
+  const dirty =
+    relayUrl !== data?.relayUrl ||
+    token.length > 0 ||
+    autoApproveNewDevices !== (data?.autoApproveNewDevices ?? false);
   const canSave =
     canEdit &&
     !busy &&
@@ -91,7 +97,21 @@ export function SelfHostedRelaySettings({
     setOpen(next);
     setRelayUrl(data?.relayUrl ?? "");
     setToken("");
+    setAutoApproveNewDevices(data?.autoApproveNewDevices ?? false);
     setError(null);
+  };
+  const changeAutoApproval = async (checked: boolean) => {
+    if (
+      checked &&
+      !(await requestConfirmDialog(
+        gt(
+          "Automatically approve new devices? Hosts with the same registration token can grant file, command, and client-management access without confirmation. A stolen token or compromised peer can authorize devices.",
+        ),
+        { initialFocus: "cancel" },
+      ))
+    )
+      return;
+    setAutoApproveNewDevices(checked);
   };
   const update = async (enabled: boolean) => {
     setBusy(true);
@@ -101,6 +121,7 @@ export function SelfHostedRelaySettings({
       input: {
         relayUrl: enabled ? relayUrl : (data?.relayUrl ?? relayUrl),
         enabled,
+        ...(enabled && approvalPolicyAvailable ? { autoApproveNewDevices } : {}),
         ...(enabled && token ? { registrationToken: token } : {}),
       },
     });
@@ -209,6 +230,34 @@ export function SelfHostedRelaySettings({
                       </T>
                     </span>
                   </label>
+                  <SettingsRow
+                    title={gt("Automatically approve new devices")}
+                    description={
+                      !approvalPolicyAvailable
+                        ? gt("Update this host to manage device approvals.")
+                        : autoApproveNewDevices
+                          ? gt(
+                              "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
+                            )
+                          : gt(
+                              "New devices require approval. Existing clients retain access; revoke them in Authorized clients.",
+                            )
+                    }
+                    control={
+                      <Switch
+                        aria-label={gt("Automatically approve new devices")}
+                        checked={autoApproveNewDevices}
+                        disabled={!canEdit || busy || !approvalPolicyAvailable}
+                        onCheckedChange={(checked) => void changeAutoApproval(checked)}
+                      />
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    <T>
+                      This affects new requests only. Pending requests still require manual
+                      approval.
+                    </T>
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     <T>
                       To connect another device, use Create link under Authorized clients and choose
@@ -275,6 +324,14 @@ export function SelfHostedRelaySettings({
           </Dialog>
         }
       />
+      {data?.autoApproveNewDevices ? (
+        <p role="status" className="text-xs text-destructive">
+          <T>
+            Automatic device approval is on. Hosts with the same registration token can authorize
+            devices without confirmation.
+          </T>
+        </p>
+      ) : null}
     </>
   );
 }

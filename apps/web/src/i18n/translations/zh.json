@@ -518,6 +518,7 @@
   "5c5941732d5dfac6": "配对信息无效。",
   "b8ca23ad7dda376e": "该地址指向另一台机器 {host}。请将其添加为独立环境。",
   "f407ee3729a19a99": "请先更新当前客户端和远程机器上的 T3 Code，再连接。",
+  "9c0c8ec7c65f0898": "连接请求已被拒绝或已过期。请重新发起连接。",
   "0c0150a90b582a7a": "环境 URL 无效。",
   "693cb5c4fb40f109": "只能编辑已保存的 bearer 环境。",
   "5f5844b910cb1544": "已保存的 bearer 凭据不可用。",
@@ -1998,12 +1999,12 @@
   "7af7f00b85cc2930": "确认操作",
   "8b418a02b73f49b8": "此操作需要你的确认。",
   "e74139c17fab1fa1": "确认",
+  "0c4fde0350190b39": "{device} 请求通过 {product} 连接。仅当该设备显示验证码 {code} 时才批准。请求权限：{scopes}",
   "4a18481bea4b4ad5": "有新设备登录了 {environmentLabel}",
   "4144ab6aa487528a": "{device} 已通过 {product} 连接。不是你本人？请检查。",
   "a10cfdb27152c757": "{count, plural, other {{count} 台设备}}已通过 {product} 连接。不是你本人？请检查。",
   "4672f332c89dbcd9": "查看",
   "775a3e99e2638341": "有设备想要连接到 {environmentLabel}",
-  "a8befcb9f1c61f60": "{device}。仅当设备上显示的验证码为 {code} 时才批准。",
   "ac48cc297029db41": "批准",
   "c12ca3fea745def0": "无法批准设备",
   "af63f05ed2f5eeb3": "拒绝",
@@ -5004,6 +5005,7 @@
   "13cf3cd978eef92a": "请把附件留在这台机器上",
   "a4ca7da61227002d": "选择自动分配前请先移除附件，再在选中的机器上重新添加。",
   "512d8afab852df1a": "无法切换机器",
+  "ee3ea4351c88e7d7": "此项目已不可用。",
   "32e421d1e2dfdaff": "正在检查机器…",
   "0db14066bd4ce117": "自动分配不可用",
   "55b562c00e37321b": "无法强制停止智能体",
@@ -6971,6 +6973,19 @@
   "36b7fbe31bde05f3": "此仓库没有标签。",
   "2764eab1d2853980": "此仓库的标签多于此处列出的数量。其余标签请在托管平台上应用。",
   "5e5917c3b907c7d6": "已应用",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "已评论"
+    }
+  ],
   "404ee0e0134b60ae": "正在所有托管平台上搜索“{query}”",
   "ca612a0074954046": "正在检查…",
   "8b04f78f836b6c11": "这些筛选条件下没有结果",
@@ -7269,19 +7284,6 @@
       "t": "span",
       "i": 2,
       "c": "已审查"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "已评论"
     }
   ],
   "04ea50285b00dcdd": "概览",
@@ -7746,6 +7748,8 @@
   "d72f427e7133f2cb": "已连接 {duration}",
   "ec8d754031dc72fd": "上次连接于 {time}",
   "b7406be04f4d7735": "尚未连接。",
+  "35d976c93dd22ea9": "自动批准",
+  "8154e026b91bde3c": "手动批准",
   "595a1c9d5f762fef": "客户端权限范围",
   "06ec30a199134db1": "无法创建配对 URL。",
   "79b1490795e4c205": "无法创建配对 URL",
@@ -8189,7 +8193,9 @@
   "ee07cdc25d1562d0": "更新 Codex",
   "c4e68ca143d1cb28": "切换账户",
   "d356add77d113720": "断开连接",
-  "90fca700a649603e": "T3 Connect 设备",
+  "e5ebf0e43d8672a4": "设备审批",
+  "7146b4963e8ab912": "请求时间：{date}",
+  "f606c15f39ea38a4": "请求权限：{scopes}",
   "2a2675972bd6818a": "撤销 {name}？",
   "305e4fd592eb570a": "无法撤销设备",
   "c9ae6751db0ea9cb": [
@@ -9350,7 +9356,6 @@
   "b76e857a764ea02a": "{environment} 上 {path} 的分组规则",
   "e6e55f343639ae71": "默认（{mode}）",
   "87158e7b8e714bc6": "从侧边栏添加项目后，即可在此配置。",
-  "ee3ea4351c88e7d7": "此项目已不可用。",
   "062d19d24615e108": "项目名称不能为空",
   "303af9de2741db90": "无法重命名项目",
   "f578154800d7af01": "无法更新项目图标",
@@ -10167,6 +10172,7 @@
     },
     " 读取，将被取消设置。凭据本身不受影响。"
   ],
+  "bb9f6fea765b8b6e": "正在等待 {host} 批准。请核对两台设备上的验证码 {code} 是否一致。",
   "f2840e3c9c99042a": "无法连接。请检查两台机器均已在线，并运行最新版本的 T3 Code。",
   "b3e6f662fc3e4f2d": "MCP 客户端",
   "fc4c1acbd708e980": "无法创建 MCP 令牌。",
@@ -10183,6 +10189,7 @@
   "752fa31f9a4b7702": "Disconnected",
   "9a37921edcadc6bd": "Connection error",
   "6e9b12a55d970d4e": "Not configured",
+  "cb9876f13e6f8b79": "自动批准新设备？使用相同注册令牌的主机可直接授予文件、命令和客户端管理权限，无需确认。令牌被盗或其他主机被入侵时，攻击者可能授权设备访问。",
   "96f9bceef1e19707": "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
   "5d3565d164dc27b1": "Let other devices reach this host through your own relay. No inbound host port is needed.",
   "3230508d1cfe0c38": "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
@@ -10190,6 +10197,10 @@
   "a5b699e503a921c6": "Relay registration token",
   "3dee8e329fca3469": "Saved on this host; leave blank to keep",
   "95dbfc92730ea987": "At least 32 characters",
+  "4d75c5a6f21baa91": "自动批准新设备",
+  "9bc441b4e7e964d6": "请更新此主机，以管理设备审批。",
+  "2b93116b980bbd83": "已开启设备自动批准。使用相同注册令牌的主机可直接授权设备，无需确认。",
+  "36499d36e76d4ace": "新设备需要审批。已有客户端仍保留访问权限；请在“已授权客户端”中撤销。",
   "31426dda1da03064": "Relay connection actions",
   "38fd76cdee43e19a": "Save and reconnect",
   "f31e3c09e92419fd": "Save and connect",
@@ -10197,9 +10208,11 @@
   "f1735a1816ec727b": "Use an HTTPS origin. HTTP is allowed only for loopback testing.",
   "07775b794325d398": "Host registration token",
   "f17b91afaa124ac4": "Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This admits hosts to the relay; devices use pairing links instead. Stored privately on this host.",
+  "bd77612a8ddae5f4": "仅影响新请求。待审批请求仍需手动批准。",
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
+  "3be73c72482e6ab4": "已开启设备自动批准。使用相同注册令牌的主机可直接授权设备，无需确认。",
   "910a79263d640e22": "已允许",
   "43e5c059e5308eee": "未授予",
   "32659cddbd37d220": "这些权限适用于当前使用的线路。其他线路的权限可能不同。",

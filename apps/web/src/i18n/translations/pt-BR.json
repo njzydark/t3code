@@ -518,6 +518,7 @@
   "5c5941732d5dfac6": "Os detalhes de pareamento são inválidos.",
   "b8ca23ad7dda376e": "Esse endereço leva a {host}, outra máquina. Adicione-a como um ambiente próprio.",
   "f407ee3729a19a99": "Atualize este cliente e o T3 Code remoto antes de conectar.",
+  "9c0c8ec7c65f0898": "The connection request was denied or expired. Start Connect again.",
   "0c0150a90b582a7a": "A URL do ambiente é inválida.",
   "693cb5c4fb40f109": "Só é possível editar ambientes bearer salvos.",
   "5f5844b910cb1544": "A credencial bearer salva não está disponível.",
@@ -1997,12 +1998,12 @@
   "7af7f00b85cc2930": "Confirmar ação",
   "8b418a02b73f49b8": "Esta ação exige sua confirmação.",
   "e74139c17fab1fa1": "Confirmar",
+  "0c4fde0350190b39": "{device} wants to connect through {product}. Approve only if it shows code {code}. Requested access: {scopes}",
   "4a18481bea4b4ad5": "Novo dispositivo conectado a {environmentLabel}",
   "4144ab6aa487528a": "{device} se conectou pelo {product}. Não foi você? Revise.",
   "a10cfdb27152c757": "{count, plural, one {{count} dispositivo se conectou} other {{count} dispositivos se conectaram}} pelo {product}. Não foi você? Revise.",
   "4672f332c89dbcd9": "Revisar",
   "775a3e99e2638341": "Um dispositivo quer se conectar a {environmentLabel}",
-  "a8befcb9f1c61f60": "{device}. Aprove apenas se ele mostrar o código {code}.",
   "ac48cc297029db41": "Aprovar",
   "c12ca3fea745def0": "Não foi possível aprovar o dispositivo",
   "af63f05ed2f5eeb3": "Negar",
@@ -4998,6 +4999,7 @@
   "13cf3cd978eef92a": "Manter os anexos nesta máquina",
   "a4ca7da61227002d": "Remova os anexos antes de escolher o roteamento automático e depois anexe-os na máquina selecionada.",
   "512d8afab852df1a": "Não foi possível trocar de máquina",
+  "ee3ea4351c88e7d7": "Este projeto não está mais disponível.",
   "32e421d1e2dfdaff": "Verificando as máquinas…",
   "0db14066bd4ce117": "Balanceamento automático indisponível",
   "55b562c00e37321b": "Não foi possível forçar a parada do agente",
@@ -6959,6 +6961,19 @@
   "36b7fbe31bde05f3": "Este repositório não tem rótulos.",
   "2764eab1d2853980": "Este repositório tem mais rótulos do que os listados aqui. Aplique os demais no host.",
   "5e5917c3b907c7d6": "Aplicada",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "comentou"
+    }
+  ],
   "404ee0e0134b60ae": "Pesquisando “{query}” em todos os hosts",
   "ca612a0074954046": "Verificando...",
   "8b04f78f836b6c11": "Nada com estes filtros",
@@ -7255,19 +7270,6 @@
       "t": "span",
       "i": 2,
       "c": "revisou"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "comentou"
     }
   ],
   "04ea50285b00dcdd": "Visão geral",
@@ -7732,6 +7734,8 @@
   "d72f427e7133f2cb": "Conectado há {duration}",
   "ec8d754031dc72fd": "Última conexão às {time}",
   "b7406be04f4d7735": "Ainda não conectado.",
+  "35d976c93dd22ea9": "Automatically approved",
+  "8154e026b91bde3c": "Manually approved",
   "595a1c9d5f762fef": "Escopos do cliente",
   "06ec30a199134db1": "Falha ao criar a URL de pareamento.",
   "79b1490795e4c205": "Não foi possível criar a URL de pareamento",
@@ -8172,7 +8176,9 @@
   "ee07cdc25d1562d0": "Atualizar o Codex",
   "c4e68ca143d1cb28": "Trocar de conta",
   "d356add77d113720": "Desconectar",
-  "90fca700a649603e": "Dispositivos do T3 Connect",
+  "e5ebf0e43d8672a4": "Device approvals",
+  "7146b4963e8ab912": "Requested {date}",
+  "f606c15f39ea38a4": "Requested access: {scopes}",
   "2a2675972bd6818a": "Revogar {name}?",
   "305e4fd592eb570a": "Não foi possível revogar o dispositivo",
   "c9ae6751db0ea9cb": [
@@ -9334,7 +9340,6 @@
   "b76e857a764ea02a": "Regra de agrupamento de {path} em {environment}",
   "e6e55f343639ae71": "Padrão ({mode})",
   "87158e7b8e714bc6": "Adicione um projeto pela barra lateral para configurá-lo aqui.",
-  "ee3ea4351c88e7d7": "Este projeto não está mais disponível.",
   "062d19d24615e108": "O título do projeto não pode ficar vazio",
   "303af9de2741db90": "Falha ao renomear o projeto",
   "f578154800d7af01": "Falha ao atualizar o ícone do projeto",
@@ -10152,6 +10157,7 @@
     },
     " e serão removidas. Os segredos em si não são afetados."
   ],
+  "bb9f6fea765b8b6e": "Waiting for approval on {host}. Compare code {code} on both devices.",
   "f2840e3c9c99042a": "Não foi possível conectar. Verifique se as duas máquinas estão online e executando a versão mais recente do T3 Code.",
   "b3e6f662fc3e4f2d": "Cliente MCP",
   "fc4c1acbd708e980": "Não foi possível criar o token MCP.",
@@ -10168,6 +10174,7 @@
   "752fa31f9a4b7702": "Disconnected",
   "9a37921edcadc6bd": "Connection error",
   "6e9b12a55d970d4e": "Not configured",
+  "cb9876f13e6f8b79": "Automatically approve new devices? Hosts with the same registration token can grant file, command, and client-management access without confirmation. A stolen token or compromised peer can authorize devices.",
   "96f9bceef1e19707": "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
   "5d3565d164dc27b1": "Let other devices reach this host through your own relay. No inbound host port is needed.",
   "3230508d1cfe0c38": "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
@@ -10175,6 +10182,10 @@
   "a5b699e503a921c6": "Relay registration token",
   "3dee8e329fca3469": "Saved on this host; leave blank to keep",
   "95dbfc92730ea987": "At least 32 characters",
+  "4d75c5a6f21baa91": "Automatically approve new devices",
+  "9bc441b4e7e964d6": "Update this host to manage device approvals.",
+  "2b93116b980bbd83": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
+  "36499d36e76d4ace": "New devices require approval. Existing clients retain access; revoke them in Authorized clients.",
   "31426dda1da03064": "Relay connection actions",
   "38fd76cdee43e19a": "Save and reconnect",
   "f31e3c09e92419fd": "Save and connect",
@@ -10182,9 +10193,11 @@
   "f1735a1816ec727b": "Use an HTTPS origin. HTTP is allowed only for loopback testing.",
   "07775b794325d398": "Host registration token",
   "f17b91afaa124ac4": "Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This admits hosts to the relay; devices use pairing links instead. Stored privately on this host.",
+  "bd77612a8ddae5f4": "This affects new requests only. Pending requests still require manual approval.",
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
+  "3be73c72482e6ab4": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
   "910a79263d640e22": "Permitido",
   "43e5c059e5308eee": "Não concedido",
   "32659cddbd37d220": "Estas permissões valem para sua rota ativa. Outras rotas podem ter permissões diferentes.",

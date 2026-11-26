@@ -518,6 +518,7 @@
   "5c5941732d5dfac6": "Данные сопряжения недействительны.",
   "b8ca23ad7dda376e": "Этот адрес ведёт к {host}, другому компьютеру. Добавьте его как отдельное окружение.",
   "f407ee3729a19a99": "Перед подключением обновите этот клиент и удалённый T3 Code.",
+  "9c0c8ec7c65f0898": "The connection request was denied or expired. Start Connect again.",
   "0c0150a90b582a7a": "URL окружения недействителен.",
   "693cb5c4fb40f109": "Изменять можно только сохранённые окружения с bearer-токеном.",
   "5f5844b910cb1544": "Сохранённые bearer-учётные данные недоступны.",
@@ -1997,12 +1998,12 @@
   "7af7f00b85cc2930": "Подтвердите действие",
   "8b418a02b73f49b8": "Это действие требует вашего подтверждения.",
   "e74139c17fab1fa1": "Подтвердить",
+  "0c4fde0350190b39": "{device} wants to connect through {product}. Approve only if it shows code {code}. Requested access: {scopes}",
   "4a18481bea4b4ad5": "Новое устройство вошло в {environmentLabel}",
   "4144ab6aa487528a": "{device} подключилось через {product}. Это были не вы? Проверьте.",
   "a10cfdb27152c757": "{count, plural, one {{count} устройство подключилось} few {{count} устройства подключились} many {{count} устройств подключились} other {{count} устройства подключились}} через {product}. Это были не вы? Проверьте.",
   "4672f332c89dbcd9": "Проверить",
   "775a3e99e2638341": "Устройство хочет подключиться к {environmentLabel}",
-  "a8befcb9f1c61f60": "{device}. Подтверждайте, только если на нём код {code}.",
   "ac48cc297029db41": "Подтвердить",
   "c12ca3fea745def0": "Не удалось подтвердить устройство",
   "af63f05ed2f5eeb3": "Отклонить",
@@ -4997,6 +4998,7 @@
   "13cf3cd978eef92a": "Оставить вложения на этой машине",
   "a4ca7da61227002d": "Удалите вложения перед выбором автоматической маршрутизации, затем прикрепите их на выбранной машине.",
   "512d8afab852df1a": "Не удалось сменить машину",
+  "ee3ea4351c88e7d7": "Этот проект больше недоступен.",
   "32e421d1e2dfdaff": "Проверка машин…",
   "0db14066bd4ce117": "Автобалансировка недоступна",
   "55b562c00e37321b": "Не удалось принудительно остановить агента",
@@ -6958,6 +6960,19 @@
   "36b7fbe31bde05f3": "В этом репозитории нет меток.",
   "2764eab1d2853980": "В этом репозитории больше меток, чем показано здесь. Остальные можно применить на хосте.",
   "5e5917c3b907c7d6": "Применена",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "оставил комментарий"
+    }
+  ],
   "404ee0e0134b60ae": "Поиск «{query}» на всех хостах",
   "ca612a0074954046": "Проверка...",
   "8b04f78f836b6c11": "По этим фильтрам ничего нет",
@@ -7254,19 +7269,6 @@
       "t": "span",
       "i": 2,
       "c": "провёл ревью"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "оставил комментарий"
     }
   ],
   "04ea50285b00dcdd": "Общее",
@@ -7731,6 +7733,8 @@
   "d72f427e7133f2cb": "Подключён {duration}",
   "ec8d754031dc72fd": "Последнее подключение {time}",
   "b7406be04f4d7735": "Ещё не подключался.",
+  "35d976c93dd22ea9": "Automatically approved",
+  "8154e026b91bde3c": "Manually approved",
   "595a1c9d5f762fef": "Разрешения клиента",
   "06ec30a199134db1": "Не удалось создать URL сопряжения.",
   "79b1490795e4c205": "Не удалось создать URL сопряжения",
@@ -8171,7 +8175,9 @@
   "ee07cdc25d1562d0": "Обновить Codex",
   "c4e68ca143d1cb28": "Сменить аккаунт",
   "d356add77d113720": "Отключить",
-  "90fca700a649603e": "Устройства T3 Connect",
+  "e5ebf0e43d8672a4": "Device approvals",
+  "7146b4963e8ab912": "Requested {date}",
+  "f606c15f39ea38a4": "Requested access: {scopes}",
   "2a2675972bd6818a": "Отозвать {name}?",
   "305e4fd592eb570a": "Не удалось отозвать устройство",
   "c9ae6751db0ea9cb": [
@@ -9334,7 +9340,6 @@
   "b76e857a764ea02a": "Правило группировки для {path} в {environment}",
   "e6e55f343639ae71": "По умолчанию ({mode})",
   "87158e7b8e714bc6": "Добавьте проект на боковой панели, чтобы настроить его здесь.",
-  "ee3ea4351c88e7d7": "Этот проект больше недоступен.",
   "062d19d24615e108": "Название проекта не может быть пустым",
   "303af9de2741db90": "Не удалось переименовать проект",
   "f578154800d7af01": "Не удалось обновить значок проекта",
@@ -10154,6 +10159,7 @@
     },
     " и будут сброшены. Сами секреты не затрагиваются."
   ],
+  "bb9f6fea765b8b6e": "Waiting for approval on {host}. Compare code {code} on both devices.",
   "f2840e3c9c99042a": "Не удалось подключиться. Убедитесь, что обе машины в сети и используют последнюю версию T3 Code.",
   "b3e6f662fc3e4f2d": "Клиент MCP",
   "fc4c1acbd708e980": "Не удалось создать токен MCP.",
@@ -10170,6 +10176,7 @@
   "752fa31f9a4b7702": "Disconnected",
   "9a37921edcadc6bd": "Connection error",
   "6e9b12a55d970d4e": "Not configured",
+  "cb9876f13e6f8b79": "Automatically approve new devices? Hosts with the same registration token can grant file, command, and client-management access without confirmation. A stolen token or compromised peer can authorize devices.",
   "96f9bceef1e19707": "Remove the saved relay URL and registration token and disconnect this host? Paired devices are not revoked, and the host identity is kept.",
   "5d3565d164dc27b1": "Let other devices reach this host through your own relay. No inbound host port is needed.",
   "3230508d1cfe0c38": "Connect {environmentLabel} to your own relay. This does not enable LAN access or use T3 Connect. The connector runs with T3 and reconnects on startup.",
@@ -10177,6 +10184,10 @@
   "a5b699e503a921c6": "Relay registration token",
   "3dee8e329fca3469": "Saved on this host; leave blank to keep",
   "95dbfc92730ea987": "At least 32 characters",
+  "4d75c5a6f21baa91": "Automatically approve new devices",
+  "9bc441b4e7e964d6": "Update this host to manage device approvals.",
+  "2b93116b980bbd83": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
+  "36499d36e76d4ace": "New devices require approval. Existing clients retain access; revoke them in Authorized clients.",
   "31426dda1da03064": "Relay connection actions",
   "38fd76cdee43e19a": "Save and reconnect",
   "f31e3c09e92419fd": "Save and connect",
@@ -10184,9 +10195,11 @@
   "f1735a1816ec727b": "Use an HTTPS origin. HTTP is allowed only for loopback testing.",
   "07775b794325d398": "Host registration token",
   "f17b91afaa124ac4": "Required. Must match T3_RELAY_REGISTRATION_TOKEN on your relay server. This admits hosts to the relay; devices use pairing links instead. Stored privately on this host.",
+  "bd77612a8ddae5f4": "This affects new requests only. Pending requests still require manual approval.",
   "926a3be446e6dee3": "To connect another device, use Create link under Authorized clients and choose Self-hosted relay.",
   "b51626264716da05": "Disconnect relay",
   "d2b9db94d774cc6f": "Remove relay configuration",
+  "3be73c72482e6ab4": "Automatic device approval is on. Hosts with the same registration token can authorize devices without confirmation.",
   "910a79263d640e22": "Разрешено",
   "43e5c059e5308eee": "Не предоставлено",
   "32659cddbd37d220": "Эти разрешения относятся к вашему активному маршруту. У других маршрутов разрешения могут отличаться.",

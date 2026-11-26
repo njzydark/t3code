@@ -1,5 +1,6 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { AuthConnectDevice, EnvironmentId } from "@t3tools/contracts";
+import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -65,7 +66,7 @@ export function ConnectDeviceApprovalSettings({
   };
 
   return (
-    <SettingsSection id="connect-devices" title={gt("T3 Connect devices")}>
+    <SettingsSection id="connect-devices" title={gt("Device approvals")}>
       {requests.map((request) => {
         const connectRequest = request.connectDeviceRequest;
         if (!connectRequest) return null;
@@ -81,6 +82,23 @@ export function ConnectDeviceApprovalSettings({
                       <Var>{connectRequest.verificationCode}</Var>
                     </span>
                   </T>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {connectRequest.source === "self-hosted-relay"
+                    ? gt("Self-hosted relay")
+                    : "T3 Connect"}
+                  <span aria-hidden> · </span>
+                  {gt("Requested {date}", { date: formatAccessTimestamp(request.createdAt) })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {gt("Requested access: {scopes}", {
+                    scopes: request.scopes
+                      .map((scope) => {
+                        const option = AUTH_SCOPE_OPTIONS.find((option) => option.scope === scope);
+                        return option ? resolve(option.title) : scope;
+                      })
+                      .join(", "),
+                  })}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   <T>

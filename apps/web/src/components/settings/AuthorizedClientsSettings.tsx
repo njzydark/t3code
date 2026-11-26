@@ -561,13 +561,22 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 items-center gap-1.5">
+          <div className="flex min-h-5 flex-wrap items-center gap-1.5">
             <ConnectionStatusDot
               tooltipText={statusTooltip}
               dotClassName={isLive ? "bg-success" : "bg-muted-foreground/30"}
               pingClassName={isLive ? "bg-success/60 duration-2000" : null}
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
+            {clientSession.authorizationSource ? (
+              <span className="rounded-md border border-border/50 bg-muted/50 px-1 py-0.5 text-3xs text-muted-foreground/80">
+                {clientSession.authorizationSource === "relay-auto"
+                  ? gt("Automatically approved")
+                  : clientSession.authorizationSource === "relay-approved"
+                    ? gt("Manually approved")
+                    : gt("Pairing link")}
+              </span>
+            ) : null}
             {clientSession.current ? (
               <span className="text-3xs text-muted-foreground/80 rounded-md border border-border/50 bg-muted/50 px-1 py-0.5">
                 <T>This device</T>

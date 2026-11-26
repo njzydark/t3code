@@ -24,14 +24,13 @@ import {
 } from "./connectDeviceApproval";
 
 /**
- * Asks to approve T3 Connect devices waiting on hosts that require it and this phone manages,
+ * Asks to approve devices waiting on hosts this phone manages,
  * and tells it about devices that got in on hosts that do not.
  */
 export function ConnectDeviceApprovalCoordinator() {
   const { environments } = useEnvironments();
   const connected = environments.filter(
-    (environment) =>
-      environment.connection.phase === "connected" && environment.serverConfig !== undefined,
+    (environment) => environment.connection.phase === "connected",
   );
   const managed = useEnvironmentsWithScope(connected, AuthAccessWriteScope);
   return (
@@ -40,15 +39,13 @@ export function ConnectDeviceApprovalCoordinator() {
         .filter((environment) => managed.has(environment.environmentId))
         .map((environment) => {
           const approvalRequired =
-            environment.serverConfig?.settings.requireConnectDeviceApproval === true;
+            environment.serverConfig?.settings.requireConnectDeviceApproval !== false;
           return (
             <Fragment key={environment.environmentId}>
-              {approvalRequired ? (
-                <EnvironmentApprovalWatcher
-                  environmentId={environment.environmentId}
-                  environmentLabel={environment.label}
-                />
-              ) : null}
+              <EnvironmentApprovalWatcher
+                environmentId={environment.environmentId}
+                environmentLabel={environment.label}
+              />
               <NewConnectDeviceWatcher
                 environmentId={environment.environmentId}
                 environmentLabel={environment.label}

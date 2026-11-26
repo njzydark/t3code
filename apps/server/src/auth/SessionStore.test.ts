@@ -13,6 +13,8 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -86,6 +88,64 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
+  it.effect(
+    "persists authorization sources across restart, renewal and later issuance changes",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-auth-source-" });
+        const initialLayer = yield* makeDiskSessionStoreLayer(baseDir);
+        const issued = yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const clients = [];
+          for (const authorizationSource of [
+            "relay-auto",
+            "relay-approved",
+            "pairing-link",
+            undefined,
+          ] as const) {
+            const client = yield* sessions.issue({
+              ...relaySessionInput,
+              subject: "one-time-token",
+              ...(authorizationSource ? { authorizationSource } : {}),
+              renewalWindow: Duration.days(30),
+            });
+            clients.push({ client, authorizationSource });
+          }
+          return clients;
+        }).pipe(Effect.provide(initialLayer), Effect.scoped);
+
+        const reopenedLayer = yield* makeDiskSessionStoreLayer(baseDir);
+        yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const changes = yield* Queue.unbounded<SessionStore.SessionCredentialChange>();
+          yield* sessions.streamChanges.pipe(
+            Stream.runForEach((change) => Queue.offer(changes, change)),
+            Effect.forkScoped({ startImmediately: true }),
+          );
+          yield* TestClock.adjust(Duration.minutes(30));
+          for (const { client, authorizationSource } of issued) {
+            const renewed = yield* sessions.renew(client.token, {
+              proofKeyThumbprint: relaySessionInput.proofKeyThumbprint,
+              consumeProof: Effect.void,
+              ttl: Duration.hours(1),
+              renewalWindow: Duration.days(30),
+            });
+            expect(renewed.sessionId).toBe(client.sessionId);
+            const listed = (yield* sessions.listActive()).find(
+              (row) => row.sessionId === client.sessionId,
+            );
+            expect(listed?.authorizationSource).toBe(authorizationSource);
+            expect(listed?.client.label).toBe(relaySessionInput.client.label);
+            expect(yield* Queue.take(changes)).toEqual({
+              type: "clientUpserted",
+              clientSession: listed,
+            });
+          }
+        }).pipe(Effect.provide(reopenedLayer), Effect.scoped);
+      }),
+  );
+
   it.effect.each(["revoke", "revokeAllExcept", "replace"] as const)(
     "invalidates every connection for a session on %s and leaves other sessions active",
     (operation) =>

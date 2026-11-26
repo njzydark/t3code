@@ -6,6 +6,10 @@ import {
 } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
+import * as TestClock from "effect/testing/TestClock";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -29,6 +33,7 @@ import * as ConnectionDriver from "./driver.ts";
 import {
   BearerConnectionTarget,
   ConnectionBlockedError,
+  type ConnectionAttemptError,
   PrimaryConnectionTarget,
 } from "./model.ts";
 import * as Onboarding from "./onboarding.ts";
@@ -63,10 +68,13 @@ function layerPairingHttp(
     readonly grantScopes?: ReadonlyArray<AuthEnvironmentScope>;
     readonly exchangeGate?: { readonly reached: () => void; readonly release: Promise<void> };
     readonly accessTokenRenewal?: boolean;
+    readonly pendingExchanges?: number;
+    readonly onPending?: () => void;
   },
 ) {
   const grantScopes = options?.grantScopes ?? AuthStandardClientScopes;
   let sessionScopes: ReadonlyArray<string> = [];
+  let exchanges = 0;
   const fetchFn = ((input, init = {}) => {
     const url = String(input);
     calls.push({ url, init });
@@ -97,6 +105,19 @@ function layerPairingHttp(
     }
 
     if (url.endsWith("/oauth/token")) {
+      if (exchanges++ < (options?.pendingExchanges ?? 0)) {
+        options?.onPending?.();
+        return Promise.resolve(
+          Response.json(
+            {
+              _tag: "EnvironmentConnectApprovalPendingError",
+              code: "connect_approval_pending",
+              traceId: "pending-test",
+            },
+            { status: 403 },
+          ),
+        );
+      }
       if (options?.failExchange === true) {
         return Promise.resolve(
           Response.json(
@@ -141,6 +162,8 @@ function layerPairingHttp(
       return gate.release.then(() => granted);
     }
 
+    if (url.endsWith("/api/self-hosted-relay/cancel"))
+      return Promise.resolve(new Response(null, { status: 204 }));
     if (url.endsWith("/api/auth/session")) {
       return Promise.resolve(
         Response.json({
@@ -500,6 +523,82 @@ describe("connection onboarding", () => {
       ),
   );
 
+  it.effect.each(["approved", "denied", "cancelled", "expired"] as const)(
+    "waits for Relay approval with fresh proofs and handles %s",
+    (outcome) =>
+      Effect.gen(function* () {
+        const pending = yield* Deferred.make<
+          void,
+          ConnectionAttemptError | Persistence.ConnectionPersistenceError
+        >();
+        const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+        const proofs: string[] = [];
+        const registration = yield* preparePairingRegistration({
+          ...PAIRING_INPUT,
+          requireDpop: true,
+          approval: {
+            verificationCode: "ABCD-EFGH",
+            expiresAt: DateTime.makeUnsafe(600_000),
+          },
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              layerPairingOnboarding(
+                {
+                  accessTokenRenewal: true,
+                  pendingExchanges: outcome === "expired" ? Infinity : 1,
+                  onPending: () => {
+                    Deferred.doneUnsafe(pending, Effect.void);
+                  },
+                  failExchange: outcome === "denied",
+                },
+                calls,
+              ),
+              Layer.succeed(ManagedRelay.ManagedRelayDpopSigner, {
+                thumbprint: Effect.succeed("device-key"),
+                createProof: ({ url }) =>
+                  Effect.sync(() => {
+                    const proof = `proof-${proofs.length}:${url}`;
+                    proofs.push(proof);
+                    return proof;
+                  }),
+              }),
+            ),
+          ),
+          Effect.onExit((exit) =>
+            Exit.isFailure(exit) ? Deferred.failCause(pending, exit.cause) : Effect.void,
+          ),
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(pending);
+        if (outcome === "cancelled") {
+          yield* Fiber.interrupt(registration);
+          expect(Exit.hasInterrupts(yield* Fiber.await(registration))).toBe(true);
+        } else if (outcome === "expired") {
+          yield* TestClock.adjust("10 minutes");
+          expect(Exit.isFailure(yield* Fiber.await(registration))).toBe(true);
+        } else {
+          yield* TestClock.adjust("2 seconds");
+          const result = yield* Fiber.await(registration);
+          if (outcome === "approved") {
+            expect(Exit.isSuccess(result)).toBe(true);
+          } else expect(Exit.isFailure(result)).toBe(true);
+          const exchanges = calls.filter((call) => call.url.endsWith("/oauth/token"));
+          expect(exchanges).toHaveLength(2);
+          expect(new Headers(exchanges[0]?.init.headers).get("dpop")).not.toBe(
+            new Headers(exchanges[1]?.init.headers).get("dpop"),
+          );
+        }
+        const cancellations = calls.filter((call) =>
+          call.url.endsWith("/api/self-hosted-relay/cancel"),
+        );
+        expect(cancellations).toHaveLength(outcome === "approved" ? 0 : 1);
+        expect(proofs.at(-1)).toContain(
+          outcome === "approved" ? "/oauth/token" : "/api/self-hosted-relay/cancel",
+        );
+      }).pipe(Effect.scoped),
+  );
+
   it.effect.each([
     {
       kind: "primary",
@@ -682,20 +781,41 @@ describe("connection onboarding", () => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("refuses to add a route that reaches a different machine, keeping the code", () =>
-    Effect.gen(function* () {
-      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
-      const error = yield* preparePairingRegistration({
-        host: "remote.example.test",
-        pairingCode: "pairing-token",
-        expectedEnvironmentId: EnvironmentId.make("some-other-machine"),
-      }).pipe(Effect.provide(layerPairingOnboarding(undefined, calls)), Effect.flip);
-      expect(error).toMatchObject({ reason: "configuration" });
-      expect(error.message).toContain("different machine");
-      expect(calls.map((call) => call.url)).toEqual([
-        "https://remote.example.test/.well-known/t3/environment",
-      ]);
-    }),
+  it.effect.each([false, true])(
+    "refuses a different machine without disclosing the code (approval: %s)",
+    (approval) =>
+      Effect.gen(function* () {
+        const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+        const error = yield* preparePairingRegistration({
+          host: "remote.example.test",
+          pairingCode: "pairing-token",
+          expectedEnvironmentId: EnvironmentId.make("some-other-machine"),
+          ...(approval
+            ? {
+                approval: {
+                  verificationCode: "ABCD-EFGH",
+                  expiresAt: DateTime.makeUnsafe(600_000),
+                },
+              }
+            : {}),
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              layerPairingOnboarding(undefined, calls),
+              Layer.succeed(ManagedRelay.ManagedRelayDpopSigner, {
+                thumbprint: Effect.succeed("device-key"),
+                createProof: () => Effect.succeed("device-proof"),
+              }),
+            ),
+          ),
+          Effect.flip,
+        );
+        expect(error).toMatchObject({ reason: "configuration" });
+        expect(error.message).toContain("different machine");
+        expect(calls.map((call) => call.url)).toEqual([
+          "https://remote.example.test/.well-known/t3/environment",
+        ]);
+      }),
   );
 
   it.effect("refuses an outdated server that cannot update itself", () =>

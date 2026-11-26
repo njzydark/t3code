@@ -53,6 +53,17 @@ export const SelfHostedRelayEnvironment = Schema.Struct({
   peerId: Schema.String,
 });
 export const SELF_HOSTED_RELAY_CONNECT_PATH = "/api/self-hosted-relay/connect";
+export const SELF_HOSTED_RELAY_CANCEL_PATH = "/api/self-hosted-relay/cancel";
+export const SelfHostedRelayApproval = Schema.Struct({
+  verificationCode: Schema.String,
+  expiresAt: Schema.DateTimeUtc,
+});
+export type SelfHostedRelayApproval = typeof SelfHostedRelayApproval.Type;
+export const SelfHostedRelayAuthorization = Schema.Struct({
+  credential: Schema.String,
+  approval: Schema.optionalKey(SelfHostedRelayApproval),
+});
+export type SelfHostedRelayAuthorization = typeof SelfHostedRelayAuthorization.Type;
 export const SelfHostedRelayConnectInput = Schema.Struct({
   environmentId: EnvironmentId,
   proof: Schema.String.check(Schema.isMaxLength(8192)),
@@ -62,6 +73,7 @@ export const SelfHostedRelayConnectResult = Schema.Struct({
   environment: SelfHostedRelayEnvironment,
   relayUrl: Schema.String,
   credential: Schema.String,
+  approval: Schema.optionalKey(SelfHostedRelayApproval),
 });
 export type SelfHostedRelayConnectResult = typeof SelfHostedRelayConnectResult.Type;
 export const SelfHostedRelayDirectory = Schema.Struct({
@@ -84,6 +96,7 @@ export type SelfHostedRelayMcpTokenResult = typeof SelfHostedRelayMcpTokenResult
 export const SelfHostedRelayStatus = Schema.Struct({
   relayUrl: Schema.String,
   enabled: Schema.Boolean,
+  autoApproveNewDevices: Schema.optionalKey(Schema.Boolean),
   hasRegistrationToken: Schema.Boolean,
   phase: Schema.Literals(["disabled", "connecting", "connected", "reconnecting", "error"]),
   error: Schema.NullOr(Schema.String),
@@ -93,6 +106,7 @@ export type SelfHostedRelayStatus = typeof SelfHostedRelayStatus.Type;
 export const SelfHostedRelayUpdate = Schema.Struct({
   relayUrl: Schema.String.check(Schema.isMaxLength(2048)),
   enabled: Schema.Boolean,
+  autoApproveNewDevices: Schema.optionalKey(Schema.Boolean),
   registrationToken: Schema.optional(
     Schema.String.check(Schema.isMinLength(32), Schema.isMaxLength(1024)),
   ),

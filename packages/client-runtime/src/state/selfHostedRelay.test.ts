@@ -12,6 +12,9 @@ import { vi } from "vite-plus/test";
 import { RpcClientError } from "effect/rpc";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
+import * as Fiber from "effect/Fiber";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -304,6 +307,7 @@ it.effect.each([
   { failure: "permissions", allowed: true, success: false, attempts: ["source"] },
   { failure: "all", allowed: true, success: false, attempts: ["source", "backup"] },
   { failure: "onboarding", allowed: true, success: false, attempts: ["source"] },
+  { failure: "approval-cancel", allowed: true, success: false, attempts: ["source"] },
   { failure: "offline", allowed: true, success: true, attempts: ["backup"] },
   { failure: "web", allowed: true, success: true, attempts: ["source"] },
   { failure: "mobile", allowed: true, success: true, attempts: ["source"] },
@@ -371,6 +375,14 @@ it.effect.each([
                           environment: candidate,
                           relayUrl: candidate.relayUrl,
                           credential: "one-use-key-bound-grant",
+                          ...(failure === "approval-cancel"
+                            ? {
+                                approval: {
+                                  verificationCode: "ABCD-EFGH",
+                                  expiresAt: DateTime.makeUnsafe(600_000),
+                                },
+                              }
+                            : {}),
                         });
                       }),
                   },
@@ -421,6 +433,7 @@ it.effect.each([
             registerPairing: (input) =>
               Effect.suspend(() => {
                 registrations.push(input);
+                if (failure === "approval-cancel") return Effect.never;
                 return failure === "onboarding"
                   ? Effect.fail(
                       new ConnectionBlockedError({
@@ -453,6 +466,7 @@ it.effect.each([
       );
       for (const id of [source, backup]) {
         const permitted = id === source ? allowed : failure !== "no-permission";
+        yield* AtomRegistry.mount(registry, sessions(id));
         registry.set(
           sessions(id),
           AsyncResult.success({
@@ -469,6 +483,21 @@ it.effect.each([
         );
       }
       expect(registry.get(atoms.connect.permissionAtom(candidate))).toBe(attempts.length > 0);
+      if (failure === "approval-cancel") {
+        yield* AtomRegistry.mount(registry, atoms.approval(target));
+        const connection = yield* atoms.connect.run(registry, candidate).pipe(Effect.forkScoped);
+        const pending = yield* AtomRegistry.toStream(registry, atoms.approval(target)).pipe(
+          Stream.filter((value) => value !== null),
+          Stream.runHead,
+        );
+        expect(Option.getOrThrow(pending)?.verificationCode).toBe("ABCD-EFGH");
+        yield* atoms.cancelConnect.run(registry, target);
+        expect(Exit.hasInterrupts(yield* Fiber.await(connection))).toBe(true);
+        expect(registry.get(atoms.approval(target))).toBeNull();
+        expect(grants.map((grant) => grant.via)).toEqual(attempts);
+        expect(registrations[0]?.approval?.verificationCode).toBe("ABCD-EFGH");
+        return;
+      }
       const result = yield* atoms.connect.run(registry, candidate).pipe(Effect.result);
       expect(result._tag).toBe(success ? "Success" : "Failure");
       expect(grants.map((grant) => grant.via)).toEqual(attempts);

@@ -1,4 +1,5 @@
 import { SelfHostedRelayMcpSettings } from "./SelfHostedRelayMcpSettings";
+import { AuthorizedClientsSettings } from "./AuthorizedClientsSettings";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { serverUpdateFailureText } from "@t3tools/client-runtime/state/server";
 import { T, useGT, useMessages, Var } from "gt-react-native";
@@ -217,6 +218,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               />
             </SettingsSection>
             <SelfHostedRelayMcpSettings environmentId={environmentId} />
+            <AuthorizedClientsSettings environmentId={environmentId} />
             <EnvironmentRoutesSection
               environmentId={environmentId}
               connected={connected}

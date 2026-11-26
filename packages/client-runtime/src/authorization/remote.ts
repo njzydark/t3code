@@ -1,6 +1,7 @@
 import { telemetryDisabled } from "@t3tools/shared/telemetryPolicy";
 import {
   AuthAccessTokenType,
+  SELF_HOSTED_RELAY_CANCEL_PATH,
   type AuthClientPresentationMetadata,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
@@ -15,6 +16,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -29,6 +32,26 @@ export type RemoteEnvironmentAuthError = RemoteEnvironmentRequestError;
 
 const DEFAULT_REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const isUndeclaredStatusError = Schema.is(RemoteEnvironmentAuthUndeclaredStatusError);
+
+export const cancelRemotePairing = Effect.fn("clientRuntime.authorization.cancelRemotePairing")(
+  function* (input: {
+    readonly httpBaseUrl: string;
+    readonly credential: string;
+    readonly proof: string;
+  }) {
+    const url = environmentEndpointUrl(input.httpBaseUrl, SELF_HOSTED_RELAY_CANCEL_PATH);
+    const client = yield* HttpClient.HttpClient;
+    return yield* executeEnvironmentHttpRequest(
+      url,
+      5_000,
+      HttpClientRequest.post(url).pipe(
+        HttpClientRequest.bodyJson({ credential: input.credential, proof: input.proof }),
+        Effect.flatMap((request) => client.execute(request)),
+        Effect.asVoid,
+      ),
+    );
+  },
+);
 
 const clientMetadataTokenExchangeFields = (
   clientMetadata: AuthClientPresentationMetadata | undefined,

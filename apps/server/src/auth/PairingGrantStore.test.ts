@@ -48,6 +48,193 @@ const layerPairingGrantStore = (
   );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStore.layer", (it) => {
+  it.effect("keeps Relay approvals isolated from T3 Connect trust and other scopes", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const proofKeyThumbprint = "relay-device";
+      yield* grants.trustConnectDevice(proofKeyThumbprint, { deviceType: "desktop" });
+      const first = yield* grants.issueOneTimeToken({
+        proofKeyThumbprint,
+        requiresConnectApproval: true,
+        authorizationSource: "relay-approved",
+        scopes: ["orchestration:read"],
+      });
+      const expanded = yield* grants.issueOneTimeToken({
+        proofKeyThumbprint,
+        requiresConnectApproval: true,
+        authorizationSource: "relay-approved",
+        scopes: ["orchestration:read", "access:write"],
+      });
+      const pending = yield* grants.listActive();
+      expect(pending.map((link) => link.id)).toContain(first.id);
+      expect(
+        pending.find((link) => link.id === first.id)?.connectDeviceRequest?.verificationCode,
+      ).not.toBe(
+        pending.find((link) => link.id === expanded.id)?.connectDeviceRequest?.verificationCode,
+      );
+      expect(
+        (yield* Effect.flip(grants.consume(first.credential, { proofKeyThumbprint })))._tag,
+      ).toBe("BootstrapCredentialConnectApprovalPendingError");
+      expect(yield* grants.approveConnectRequest(first.id)).toBe(true);
+      expect((yield* grants.consume(first.credential, { proofKeyThumbprint })).scopes).toEqual([
+        "orchestration:read",
+      ]);
+      expect(
+        (yield* Effect.flip(grants.consume(expanded.credential, { proofKeyThumbprint })))._tag,
+      ).toBe("BootstrapCredentialConnectApprovalPendingError");
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect("approves only a Relay request without trusting the device globally", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const proofKeyThumbprint = "untrusted-relay-device";
+      const issued = yield* grants.issueOneTimeToken({
+        proofKeyThumbprint,
+        requiresConnectApproval: true,
+        authorizationSource: "relay-approved",
+      });
+      expect(yield* grants.approveConnectRequest(issued.id)).toBe(true);
+      expect(yield* grants.listConnectDevices()).toEqual([]);
+      expect(yield* grants.isConnectDeviceTrusted(proofKeyThumbprint)).toBe(false);
+      expect(yield* grants.revoke(issued.id)).toBe(true);
+      expect(
+        (yield* Effect.flip(grants.consume(issued.credential, { proofKeyThumbprint })))._tag,
+      ).toBe("UnavailableBootstrapCredentialError");
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect(
+    "publishes Relay requests with the first client description and removes approvals",
+    () =>
+      Effect.gen(function* () {
+        const grants = yield* PairingGrantStore.PairingGrantStore;
+        const changes = yield* Queue.unbounded<PairingGrantStore.BootstrapCredentialChange>();
+        yield* grants.streamChanges.pipe(
+          Stream.runForEach((change) => Queue.offer(changes, change)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        const issued = yield* grants.issueOneTimeToken({
+          proofKeyThumbprint: "relay-client-metadata",
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+        });
+        const created = yield* Queue.take(changes);
+        expect(created).toMatchObject({
+          type: "pairingLinkUpserted",
+          pairingLink: { connectDeviceRequest: { source: "self-hosted-relay" } },
+        });
+        const client = { deviceType: "mobile" as const, os: "iOS" };
+        yield* grants.recordConnectRequestClient(issued.id, client);
+        const described = yield* Queue.take(changes);
+        yield* grants.recordConnectRequestClient(issued.id, { deviceType: "desktop", os: "other" });
+        const [listed] = yield* grants.listActive();
+        expect(listed?.connectDeviceRequest?.verificationCode).toBeDefined();
+        expect(listed?.connectDeviceRequest?.client).toEqual(client);
+        expect(described).toEqual({ type: "pairingLinkUpserted", pairingLink: listed });
+        expect(yield* grants.approveConnectRequest(issued.id)).toBe(true);
+        expect(yield* Queue.take(changes)).toEqual({ type: "pairingLinkRemoved", id: issued.id });
+        expect(yield* Queue.size(changes)).toBe(0);
+        expect(yield* grants.listActive()).toEqual([]);
+        expect(yield* grants.approveConnectRequest(issued.id)).toBe(false);
+        const approvedBeforeDescription = yield* grants.issueOneTimeToken({
+          proofKeyThumbprint: "relay-approved-before-description",
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+        });
+        yield* Queue.take(changes);
+        yield* grants.approveConnectRequest(approvedBeforeDescription.id);
+        expect(yield* Queue.take(changes)).toEqual({
+          type: "pairingLinkRemoved",
+          id: approvedBeforeDescription.id,
+        });
+        yield* grants.recordConnectRequestClient(approvedBeforeDescription.id, client);
+        expect(yield* Queue.size(changes)).toBe(0);
+      }).pipe(Effect.scoped, Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect("rejects denied, cancelled and expired Relay credentials", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const proofKeyThumbprint = "relay-cancellation";
+      const issue = () =>
+        grants.issueOneTimeToken({
+          proofKeyThumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved",
+          ttl: Duration.minutes(10),
+        });
+      for (const action of ["deny", "cancel", "approve-then-cancel", "expire"] as const) {
+        const issued = yield* issue();
+        if (action === "approve-then-cancel") {
+          expect(yield* grants.approveConnectRequest(issued.id)).toBe(true);
+        }
+        if (action === "deny") {
+          expect(yield* grants.revoke(issued.id)).toBe(true);
+        } else if (action === "expire") {
+          yield* TestClock.adjust(Duration.minutes(10));
+          expect(yield* grants.cancelPendingPairing(issued.credential, proofKeyThumbprint)).toBe(
+            false,
+          );
+        } else {
+          expect(yield* grants.cancelPendingPairing(issued.credential, proofKeyThumbprint)).toBe(
+            true,
+          );
+          expect(yield* grants.cancelPendingPairing(issued.credential, proofKeyThumbprint)).toBe(
+            false,
+          );
+        }
+        expect(yield* grants.approveConnectRequest(issued.id)).toBe(false);
+        expect(
+          (yield* Effect.flip(grants.consume(issued.credential, { proofKeyThumbprint })))._tag,
+        ).toBe(
+          action === "expire"
+            ? "ExpiredBootstrapCredentialError"
+            : "UnavailableBootstrapCredentialError",
+        );
+      }
+      expect(yield* grants.listActive()).toEqual([]);
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect("allows cancellation only for the owning key's unspent Relay approval grant", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const proofKeyThumbprint = "relay-owner";
+      const relay = yield* grants.issueOneTimeToken({
+        proofKeyThumbprint,
+        requiresConnectApproval: true,
+        authorizationSource: "relay-approved",
+      });
+      expect(yield* grants.cancelPendingPairing(relay.credential, "other-client")).toBe(false);
+      expect(yield* grants.approveConnectRequest(relay.id)).toBe(true);
+      yield* grants.consume(relay.credential, { proofKeyThumbprint });
+      expect(yield* grants.cancelPendingPairing(relay.credential, proofKeyThumbprint)).toBe(false);
+      for (const input of [
+        {},
+        { proofKeyThumbprint },
+        {
+          proofKeyThumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "pairing-link" as const,
+        },
+        { requiresConnectApproval: true },
+        {
+          proofKeyThumbprint,
+          requiresConnectApproval: true,
+          authorizationSource: "relay-approved" as const,
+          subject: "cloud-connect",
+        },
+      ]) {
+        const issued = yield* grants.issueOneTimeToken(input);
+        expect(yield* grants.cancelPendingPairing(issued.credential, proofKeyThumbprint)).toBe(
+          false,
+        );
+      }
+      expect(yield* grants.cancelPendingPairing("unknown", proofKeyThumbprint)).toBe(false);
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
   it.effect("accepts lowercase one-time tokens exactly once", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;

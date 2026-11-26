@@ -9,6 +9,7 @@ import {
   AuthAccessTokenType,
   EnvironmentHttpApi,
   SELF_HOSTED_RELAY_CONNECT_PATH,
+  SELF_HOSTED_RELAY_CANCEL_PATH,
 } from "@t3tools/contracts";
 import { virtualRelayOrigin } from "@t3tools/relay-transport/protocol";
 import { connectHost, createNodeRelayClient } from "@t3tools/relay-transport/node";
@@ -197,13 +198,22 @@ it.live(
         });
       expect((yield* exchange(issued.credential, null)).status).toBe(401);
       expect((yield* exchange(issued.credential, wrongKey)).status).toBe(401);
+      expect((yield* exchange(issued.credential)).status).toBe(403);
+      expect(yield* target.auth.listSessions()).toEqual([]);
+      const [pending] = yield* target.auth.listPairingLinks();
+      expect(pending?.connectDeviceRequest?.verificationCode).toBe(
+        issued.approval?.verificationCode,
+      );
+      expect(pending).toBeDefined();
+      if (pending) expect(yield* target.auth.approveConnectDevice(pending.id)).toBe(true);
       const access = yield* exchange(issued.credential);
       expect(access.status).toBe(200);
       expect(access.body).toMatchObject({ token_type: "DPoP" });
       expect((yield* exchange(issued.credential)).status).toBe(401);
       const sessions = yield* target.auth.listSessions();
-      const session = sessions.find((session) => session.subject === "self-hosted-relay-group");
+      const session = sessions.find((session) => session.subject === "one-time-token");
       expect(session?.scopes).toEqual([AuthOrchestrationReadScope, AuthAccessWriteScope]);
+      expect(session?.authorizationSource).toBe("relay-approved");
       const accessToken = decodeAccessToken(access.body).access_token;
       const request = (scheme = "DPoP") =>
         Effect.promise(async () => {
@@ -229,6 +239,30 @@ it.live(
       if (session) yield* target.auth.revokeClient(session.sessionId);
       expect((yield* exchange(unspent.credential)).status).toBe(401);
       expect(yield* request()).toMatchObject({ authenticated: false });
+
+      const cancelIssued = yield* source.host.connect(AuthStandardClientScopes, {
+        ...input,
+        proof: proof(SELF_HOSTED_RELAY_CONNECT_PATH),
+      });
+      const cancel = (proofKey: ReturnType<typeof makeDpopKey>) =>
+        Effect.promise(async () => {
+          const response = await client.fetch(
+            endpoint.httpBaseUrl + SELF_HOSTED_RELAY_CANCEL_PATH,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                credential: cancelIssued.credential,
+                proof: proof(SELF_HOSTED_RELAY_CANCEL_PATH, proofKey),
+              }),
+            },
+          );
+          await response.body?.cancel();
+          return response.status;
+        });
+      expect(yield* cancel(wrongKey)).toBe(403);
+      expect(yield* cancel(key)).toBe(204);
+      expect((yield* exchange(cancelIssued.credential)).status).toBe(401);
 
       const postGrant = Effect.fn("test.postGrant")(function* (
         secret: string,

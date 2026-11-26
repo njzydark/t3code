@@ -6,6 +6,7 @@ import {
   type AuthClientMetadata,
   type AuthClientSession,
   type AuthEnvironmentScope,
+  type AuthSessionAuthorizationSource,
   AuthWebSocketTicketUse,
   RuntimeMode,
   type ServerAuthSessionMethod,
@@ -406,6 +407,7 @@ export class SessionStore extends Context.Service<
     readonly issue: (input?: {
       readonly ttl?: Duration.Duration;
       readonly subject?: string;
+      readonly authorizationSource?: AuthSessionAuthorizationSource;
       readonly method?: ServerAuthSessionMethod;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly client?: AuthClientMetadata;
@@ -635,6 +637,9 @@ const make = Effect.gen(function* () {
       toAuthClientSession({
         sessionId: row.value.sessionId,
         subject: row.value.subject,
+        ...(row.value.authorizationSource
+          ? { authorizationSource: row.value.authorizationSource }
+          : {}),
         scopes: row.value.scopes,
         method: row.value.method,
         client: toClientMetadata(row.value.client),
@@ -758,6 +763,7 @@ const make = Effect.gen(function* () {
       const sessionRecord = {
         sessionId,
         subject: claims.sub,
+        ...(input?.authorizationSource ? { authorizationSource: input.authorizationSource } : {}),
         scopes: claims.scopes,
         method: claims.method,
         client: {
@@ -801,6 +807,7 @@ const make = Effect.gen(function* () {
         toAuthClientSession({
           sessionId,
           subject: claims.sub,
+          ...(input?.authorizationSource ? { authorizationSource: input.authorizationSource } : {}),
           scopes: claims.scopes,
           method: claims.method,
           client,
@@ -1168,6 +1175,7 @@ const make = Effect.gen(function* () {
         toAuthClientSession({
           sessionId: row.sessionId,
           subject: row.subject,
+          ...(row.authorizationSource ? { authorizationSource: row.authorizationSource } : {}),
           scopes: row.scopes,
           method: row.method,
           client: toClientMetadata(row.client),

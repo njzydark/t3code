@@ -3,6 +3,7 @@ import type {
   AuthClientMetadataDeviceType,
   AuthClientPresentationMetadata,
 } from "@t3tools/contracts";
+import { connectDeviceVerificationCode } from "@t3tools/contracts";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; the cookie name stays a plain function.
 import * as NodeCrypto from "node:crypto";
@@ -13,6 +14,17 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
+
+export function relayRequestVerificationCode(
+  requestId: string,
+  proofKeyThumbprint: string,
+): string {
+  return connectDeviceVerificationCode(
+    NodeCrypto.createHash("sha256")
+      .update(JSON.stringify(["self-hosted-relay-approval", requestId, proofKeyThumbprint]))
+      .digest("base64url"),
+  );
+}
 
 /** Cookies span ports; use separate names for servers sharing a hostname. */
 export function resolveSessionCookieName(input: {
