@@ -5,19 +5,23 @@
 #   curl -fsSL https://t3.codes/install.sh | sh
 #
 # Environment:
-#   T3CODE_CHANNEL           release train to follow: stable, nightly, or preview
+#   T3CODE_CHANNEL           release train to follow: stable, nightly, preview, or fork
 #                            (default: stable; preview is a maintainers' test train)
-#   T3CODE_VERSION           exact version to install (overrides T3CODE_CHANNEL)
+#   T3CODE_VERSION           exact version to install (skips release lookup)
 #   T3CODE_HOME              T3 home directory (default: ~/.t3)
 #   T3CODE_INSTALL_BIN_DIR   where the `t3` command goes (default: ~/.local/bin)
 #   T3CODE_RELEASE_BASE_URL  mirror for releases/download (default: GitHub)
+#   T3CODE_REPOSITORY        GitHub repository (default: pingdotgg/t3code, or
+#                            njzydark/t3code for the fork channel)
 #
 # The archive is unpacked into $T3CODE_HOME/runtime/versions/<version>, the
 # same layout `t3 service install` uses, so the service reuses this download
 # instead of fetching the release again.
 set -eu
 
-repo="pingdotgg/t3code"
+channel="${T3CODE_CHANNEL:-stable}"
+repo="${T3CODE_REPOSITORY:-pingdotgg/t3code}"
+if [ "$channel" = fork ]; then repo="${T3CODE_REPOSITORY:-njzydark/t3code}"; fi
 base_url="${T3CODE_RELEASE_BASE_URL:-https://github.com/${repo}/releases/download}"
 t3_home="${T3CODE_HOME:-$HOME/.t3}"
 case "$t3_home" in
@@ -170,6 +174,9 @@ case "$(uname -m)" in
   x86_64 | amd64) arch="x64" ;;
   *) fail "unsupported architecture $(uname -m)" ;;
 esac
+if [ "$channel" = fork ] && [ "${platform}-${arch}" != linux-x64 ]; then
+  fail "fork standalone CLI archives currently support Linux x64 only; use the fork desktop app on macOS"
+fi
 if [ "${platform}-${arch}" = darwin-x64 ]; then
   fail "there is no t3 CLI for Intel Macs. Install the desktop app from https://t3.codes/download, or run a server from source: https://github.com/${repo}/blob/main/docs/user/install.md#intel-macs"
 fi
@@ -182,13 +189,42 @@ else
   fail "sha256sum or shasum is required"
 fi
 
-channel="${T3CODE_CHANNEL:-stable}"
 version="${T3CODE_VERSION:-}"
-if [ -z "$version" ]; then
+release_tag=
+checksums_file=SHA256SUMS
+if [ "$channel" = fork ]; then
+  checksums_file=SHA256SUMS.txt
+  if [ -n "$version" ]; then
+    release_tag="$(printf '%s\n' "$version" | sed -n 's/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-fork\.\([0-9]\{8\}\.[1-9][0-9]*\)$/fork-\1/p')"
+    [ -n "$release_tag" ] || fail "T3CODE_VERSION must be a fork version such as 0.1.12-fork.20261126.3"
+  else
+    tmp_index="$(mktemp)"
+    tmp_checksums="$(mktemp)"
+    trap 'rm -f "$tmp_index" "$tmp_checksums"' EXIT
+    page=1
+    while [ -z "$version" ] && [ "$page" -le 10 ]; do
+      fetch "https://github.com/${repo}/releases.atom?page=${page}" "$tmp_index" application/atom+xml || fail "could not list fork releases; set T3CODE_VERSION to an exact published fork version"
+      tags="$(sed -n 's|.*<id>[^<]*/\(fork-[0-9]\{8\}\.[1-9][0-9]*\)</id>.*|\1|p' "$tmp_index")"
+      [ -n "$tags" ] || break
+      for tag in $tags; do
+        fetch_status=0
+        fetch "${base_url}/${tag}/${checksums_file}" "$tmp_checksums" || fetch_status=$?
+        if [ "$fetch_status" -eq 44 ]; then continue; fi
+        [ "$fetch_status" -eq 0 ] || fail "could not download fork release checksums"
+        version="$(sed -n "s/^[0-9a-f]\{64\}  t3-\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-fork\.[0-9]\{8\}\.[1-9][0-9]*\)-${platform}-${arch}\.tar\.gz\$/\1/p" "$tmp_checksums" | head -n 1)"
+        if [ -n "$version" ]; then release_tag="$tag"; break; fi
+      done
+      page=$((page + 1))
+    done
+    rm -f "$tmp_index" "$tmp_checksums"
+    trap - EXIT
+    [ -n "$version" ] || fail "could not find a published fork release with a ${platform}-${arch} CLI archive; set T3CODE_VERSION"
+  fi
+elif [ -z "$version" ]; then
   case "$channel" in
     stable) tag_pattern='v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)' ;;
     nightly | preview) tag_pattern="v\([0-9][^\"]*-${channel}\.[0-9]*\.[0-9]*\)" ;;
-    *) fail "T3CODE_CHANNEL must be stable, nightly, or preview" ;;
+    *) fail "T3CODE_CHANNEL must be stable, nightly, preview, or fork" ;;
   esac
   tmp_index="$(mktemp)"
   if [ "$channel" = stable ]; then
@@ -221,6 +257,7 @@ case "$version" in
     ;;
 esac
 
+release_tag="${release_tag:-v${version}}"
 stem="t3-${version}-${platform}-${arch}"
 archive="${stem}.tar.gz"
 versions_dir="${t3_home}/runtime/versions"
@@ -240,15 +277,16 @@ else
   printf '  %sInstalling%s T3 Code %s%s%s\n\n' "$muted" "$reset" "$bold" "$version" "$reset" >&2
   step "Downloading..."
   fetch_status=0
-  fetch "${base_url}/v${version}/SHA256SUMS" "${staging}/SHA256SUMS" || fetch_status=$?
+  fetch "${base_url}/${release_tag}/${checksums_file}" "${staging}/SHA256SUMS" || fetch_status=$?
   if [ "$fetch_status" -eq 44 ]; then
+    [ "$channel" != fork ] || fail "fork release ${release_tag} has no CLI checksums; choose a published release containing the CLI"
     fail "t3 ${version} has no release archive for ${platform}-${arch}; releases before the self-contained CLI can only be installed with \`npm install -g t3@${version}\`"
   elif [ "$fetch_status" -ne 0 ]; then
     fail "could not download the release checksums"
   fi
   expected="$(grep " \*\{0,1\}${archive}\$" "${staging}/SHA256SUMS" | cut -d' ' -f1)"
   [ -n "$expected" ] || fail "t3 ${version} has no release archive for ${platform}-${arch}"
-  download "${base_url}/v${version}/${archive}" "${staging}/${archive}" || fail "could not download ${archive}"
+  download "${base_url}/${release_tag}/${archive}" "${staging}/${archive}" || fail "could not download ${archive}"
 
   step "Verifying the download..."
   actual="$(checksum "${staging}/${archive}")"

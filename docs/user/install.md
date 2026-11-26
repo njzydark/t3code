@@ -6,6 +6,38 @@ T3 Code runs coding agents on your computer (or server) and lets you control the
 
 You need at least one installed, authenticated coding agent (provider) before starting a thread. You can launch T3 Code first and set up providers from the [Welcome page](./welcome-page.md) or **Settings → Providers**.
 
+## This unofficial fork
+
+Download this fork's applications from [njzydark/t3code Releases](https://github.com/njzydark/t3code/releases).
+Published fork releases provide a standalone CLI for Linux x64. The installer is
+hosted in this repository and downloads binaries from this fork's Releases:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/njzydark/t3code/codex/build/scripts/install.sh | T3CODE_CHANNEL=fork sh
+```
+
+This selects the newest published release containing a CLI archive, skipping
+releases that include only other components. Draft releases are not installed.
+The archive is checked against `SHA256SUMS.txt` before it is unpacked or run.
+The installer needs `sh`, `tar`, `curl` or `wget`, and `sha256sum` or `shasum`;
+Node.js and npm are not required. It installs the `t3` command in `~/.local/bin`
+and prints PATH instructions when needed. Run `t3 --version` to check the install,
+then `t3 up` to start the background host.
+
+To select an exact CLI version from a published release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/njzydark/t3code/codex/build/scripts/install.sh \
+  | T3CODE_CHANNEL=fork T3CODE_VERSION=0.1.12-fork.20261126.3 sh
+```
+
+Set `T3CODE_HOME` to change the runtime location or `T3CODE_INSTALL_BIN_DIR` to
+change the command location on the `sh` side of the pipe. Install again to select
+a newer fork release; the official installer and `npx t3@latest` install upstream
+builds. Use the fork desktop builds on macOS; Windows and additional standalone
+CLI architectures are not currently built. The installation commands below are
+for the official upstream applications.
+
 ## Command line
 
 Install the `t3` command to `~/.local/bin`:

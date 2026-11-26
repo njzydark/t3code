@@ -16,6 +16,111 @@ const nightlies = Array.from({ length: 100 }, (_, index) => ({
   tag_name: `v1.2.4-nightly.20261020.${200 - index}`,
 }));
 
+it.each([
+  { pinned: false, validChecksum: true },
+  { pinned: true, validChecksum: true },
+  { pinned: false, validChecksum: false },
+])(
+  "installs fork CLI releases (pinned: $pinned, checksum: $validChecksum)",
+  async ({ pinned, validChecksum }) => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-fork-install-"));
+    const version = "0.1.12-fork.20261126.3";
+    const stem = `t3-${version}-linux-x64`;
+    const archiveName = `${stem}.tar.gz`;
+    const requests: string[] = [];
+    const server = NodeHttp.createServer();
+    try {
+      await NodeFSP.mkdir(NodePath.join(root, stem));
+      await NodeFSP.writeFile(
+        NodePath.join(root, stem, "t3"),
+        `#!/bin/sh\necho 't3 v${version}'\n`,
+        { mode: 0o755 },
+      );
+      const archivePath = NodePath.join(root, archiveName);
+      NodeChildProcess.execFileSync("tar", ["-czf", archivePath, "-C", root, stem]);
+      const archive = await NodeFSP.readFile(archivePath);
+      const digest = NodeCrypto.createHash("sha256").update(archive).digest("hex");
+      server.on("request", (request, response) => {
+        requests.push(request.url ?? "");
+        switch (request.url) {
+          case "/njzydark/t3code/releases.atom?page=1":
+            return response.end(
+              `<feed><entry>\n<id>tag:github.com,2008:Repository/1/fork-20261126.4</id>\n</entry><entry>\n<id>tag:github.com,2008:Repository/1/fork-20261126.3</id>\n</entry></feed>`,
+            );
+          case "/njzydark/t3code/releases/download/fork-20261126.4/SHA256SUMS.txt":
+            return response.end(`${digest}  desktop-only.dmg\n`);
+          case "/njzydark/t3code/releases/download/fork-20261126.3/SHA256SUMS.txt":
+            return response.end(`${validChecksum ? digest : "0".repeat(64)}  ${archiveName}\n`);
+          case `/njzydark/t3code/releases/download/fork-20261126.3/${archiveName}`:
+            return response.end(archive);
+          default:
+            return response.writeHead(404).end();
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
+      const origin = `http://127.0.0.1:${address.port}`;
+      const source = await NodeFSP.readFile(
+        NodePath.join(import.meta.dirname, "install.sh"),
+        "utf8",
+      );
+      const installer = NodePath.join(root, "install.sh");
+      await NodeFSP.writeFile(installer, source.replaceAll("https://github.com", origin));
+      const tools = NodePath.join(root, "tools");
+      await NodeFSP.mkdir(tools);
+      await NodeFSP.writeFile(
+        NodePath.join(tools, "uname"),
+        '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n',
+        { mode: 0o755 },
+      );
+      const binDir = NodePath.join(root, "bin");
+      const { code, output } = await new Promise<{ code: number | null; output: string }>(
+        (resolve, reject) => {
+          const child = NodeChildProcess.spawn("sh", [installer], {
+            env: {
+              ...process.env,
+              PATH: `${tools}${NodePath.delimiter}${process.env.PATH}`,
+              T3CODE_CHANNEL: "fork",
+              T3CODE_VERSION: pinned ? version : "",
+              T3CODE_HOME: NodePath.join(root, "home"),
+              T3CODE_INSTALL_BIN_DIR: binDir,
+              T3CODE_RELEASE_BASE_URL: "",
+              T3CODE_REPOSITORY: "",
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          let output = "";
+          child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
+          child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
+          child.on("error", reject);
+          child.on("close", (code) => resolve({ code, output }));
+        },
+      );
+      if (validChecksum) {
+        expect(code, output).toBe(0);
+        expect(
+          NodeChildProcess.execFileSync(NodePath.join(binDir, "t3"), ["--version"], {
+            encoding: "utf8",
+          }).trim(),
+        ).toBe(`t3 v${version}`);
+      } else {
+        expect(code, output).not.toBe(0);
+        expect(output).toContain(`checksum mismatch for ${archiveName}`);
+        await expect(NodeFSP.stat(NodePath.join(binDir, "t3"))).rejects.toThrow();
+      }
+      expect(requests.includes("/njzydark/t3code/releases.atom?page=1")).toBe(!pinned);
+      expect(requests).toContain(
+        `/njzydark/t3code/releases/download/fork-20261126.3/${archiveName}`,
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home", () => {
   it("installs a relative home from a directory ending in a newline", async () => {
     const temporaryRoot = await NodeFSP.realpath(
